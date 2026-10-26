@@ -1,506 +1,818 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Visual Transfer · Sender</title>
 <link rel="manifest" href="./manifest.webmanifest">
-<meta name="theme-color" content="#000000">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
+  html, body { height: 100%; overflow: hidden; }
   body {
+    background: #0a0a0c;
+    color: #e8e6e3;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  /* 顶栏 */
+  #topbar {
+    height: 48px; flex: 0 0 48px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 14px;
+    background: rgba(255,255,255,.03);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    z-index: 30;
+  }
+  #topbar a {
+    color: #ff7a1a; text-decoration: none; font-size: 13px;
+    padding: 5px 10px; border: 1px solid rgba(255,122,26,.4); border-radius: 6px;
+  }
+  #topbar a:hover { background: rgba(255,122,26,.12); }
+  #app-name { font-size: 15px; font-weight: 600; letter-spacing: .5px; flex: 1; }
+  #lang-btn {
+    color: #ff7a1a; cursor: pointer; font-size: 13px;
+    padding: 5px 10px; border: 1px solid rgba(255,122,26,.4); border-radius: 6px;
+    user-select: none;
+  }
+  #lang-btn:hover { background: rgba(255,122,26,.12); }
+
+  /* 画布舞台 */
+  #stage {
+    flex: 1 1 auto; position: relative; overflow: hidden;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, rgba(255,122,26,.06), transparent 60%),
+      #0a0a0c;
+  }
+  #dragdrop { position: absolute; inset: 0; }
+  #canvas {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
     background: #000;
-    color: #ff6600;
-    font-family: "Microsoft YaHei", system-ui, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 12px;
   }
-  header {
-    width: 100%;
-    max-width: 860px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  #tap-hint {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(232,230,227,.55);
+    font-size: 15px; letter-spacing: .5px;
+    pointer-events: none;
+    text-align: center; line-height: 1.8;
+    transition: opacity .3s;
+    z-index: 5;
+  }
+  #tap-hint b { color: #ff7a1a; font-weight: 600; }
+  #tap-hint.hidden { opacity: 0; }
+  #invisible_click { position: absolute; cursor: pointer; z-index: 10; }
+  #invisible_click.active { cursor: default; }
+
+  /* 底部控制栏 */
+  #controls {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,.03);
+    border-top: 1px solid rgba(255,255,255,.06);
     flex-wrap: wrap;
-    margin-bottom: 10px;
+    z-index: 30;
   }
-  header h1 { font-size: 18px; font-weight: 700; }
-  header a { color: #888; font-size: 13px; text-decoration: none; }
-  header a:hover { color: #ff6600; }
-  .ctrl { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-  select, button, .tab {
-    background: #111; color: #ff6600; border: 1px solid #333;
-    border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+  .btn-group { display: flex; gap: 8px; align-items: center; }
+  .mode-btn {
+    background: #141416; color: #c9c6c1;
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 8px;
+    padding: 8px 18px; font-size: 14px; font-weight: 600;
+    cursor: pointer; min-width: 76px; text-align: center;
+    transition: all .15s;
   }
-  select:focus, button:focus, .tab:focus { outline: 1px solid #ff6600; }
-  button:hover, .tab:hover { border-color: #ff6600; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 10px; }
-  .tab.active { background: #ff6600; color: #000; border-color: #ff6600; font-weight: 700; }
-  .panel {
-    width: 100%;
-    max-width: 860px;
-    background: #0a0a0a;
-    border: 1px solid #222;
-    border-radius: 10px;
-    padding: 14px;
-    margin-bottom: 10px;
+  .mode-btn:hover { border-color: rgba(255,122,26,.6); }
+  .mode-btn.active { background: #ff7a1a; color: #141416; border-color: #ff7a1a; }
+  .ctl-label { font-size: 12px; color: rgba(232,230,227,.6); }
+  select, input[type=range] { accent-color: #ff7a1a; }
+  select {
+    background: #141416; color: #e8e6e3;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 6px;
+    padding: 6px 8px; font-size: 13px;
   }
-  .panel[hidden] { display: none; }
-  #dropzone {
-    border: 2px dashed #333; border-radius: 8px;
-    padding: 26px 12px; text-align: center; color: #888; cursor: pointer;
-    transition: border-color .2s;
+  #mode-static {
+    background: #141416; color: #e8e6e3;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 6px;
+    padding: 6px 8px; font-size: 13px;
   }
-  #dropzone.over { border-color: #ff6600; color: #ff6600; }
-  textarea {
-    width: 100%; min-height: 96px; resize: vertical;
-    background: #000; color: #eee; border: 1px solid #333; border-radius: 6px;
-    padding: 8px; font-size: 14px; font-family: inherit;
+  #fps-val { color: #ff7a1a; font-size: 13px; min-width: 24px; text-align: right; }
+  #fullscreen-btn {
+    margin-left: auto;
+    background: transparent; color: #c9c6c1;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 8px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
   }
-  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
-  .muted { color: #777; font-size: 12px; }
-  #imgPreview { max-width: 160px; max-height: 120px; border-radius: 6px; display: none; border: 1px solid #333; }
-  #imgPreview[src] { display: block; }
-  #cimbar {
-    width: 100%; max-width: 860px;
-    border: 1px solid #222; border-radius: 10px; background: #000;
-  }
+  #fullscreen-btn:hover { border-color: rgba(255,122,26,.6); color: #ff7a1a; }
+
+  /* 状态行 + 进度条 */
   #status {
-    width: 100%; max-width: 860px;
-    min-height: 20px;
-    font-size: 12px; color: #888; margin-top: 8px; line-height: 1.7;
-    white-space: pre-wrap; word-break: break-all;
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    font-size: 12px; color: rgba(232,230,227,.55);
+    border-top: 1px solid rgba(255,255,255,.04);
+    min-height: 34px;
   }
-  #badge {
-    display: none; background: #ff6600; color: #000;
-    font-size: 12px; font-weight: 700; border-radius: 4px; padding: 2px 8px;
+  #status.active { color: #ff7a1a; }
+  #progress {
+    flex: 0 0 auto;
+    height: 3px;
+    background: rgba(255,255,255,.06);
+    display: none;
   }
-  #badge.on { display: inline-block; }
+  #progress.show { display: block; }
+  #progress-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #ff7a1a, #ffb347);
+    transition: width .4s;
+  }
+
+  /* 模式面板（浮层，位于控制栏上方） */
+  #panels {
+    position: fixed;
+    left: 50%; bottom: 132px;
+    transform: translateX(-50%);
+    z-index: 25;
+    width: min(560px, calc(100vw - 24px));
+  }
+  .panel {
+    background: #16161a;
+    border: 1px solid rgba(255,122,26,.35);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+    display: none;
+  }
+  .panel.show { display: block; }
+  .panel h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #ff7a1a; }
+  .panel .hint { font-size: 12px; color: rgba(232,230,227,.55); margin: 8px 0 0; }
+  .panel textarea {
+    width: 100%; min-height: 84px;
+    background: #0d0d10; color: #e8e6e3;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 8px;
+    padding: 10px; font-size: 14px; font-family: inherit;
+    resize: vertical;
+  }
+  .panel textarea:focus { outline: none; border-color: rgba(255,122,26,.6); }
+  .panel .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+  .panel .primary {
+    background: #ff7a1a; color: #141416;
+    border: none; border-radius: 8px;
+    padding: 9px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .panel .primary:disabled { opacity: .35; cursor: default; }
+  .panel .secondary {
+    background: transparent; color: #c9c6c1;
+    border: 1px solid rgba(255,255,255,.2); border-radius: 8px;
+    padding: 9px 16px; font-size: 13px; cursor: pointer;
+  }
+  .panel .secondary:hover { border-color: rgba(255,122,26,.6); color: #ff7a1a; }
+  #img-preview { max-width: 200px; max-height: 150px; border-radius: 8px; margin-top: 10px; display: block; }
 </style>
 </head>
 <body>
 
-<header>
-  <a href="./index.html" data-i18n="home">首页</a>
-  <h1 data-i18n="title">视觉传输 · 发送端</h1>
-  <div class="ctrl">
-    <span class="muted" data-i18n="fpsLabel">帧率</span>
-    <select id="fps" data-i18n-title="fpsHint">
-      <option value="15">15 fps</option>
-      <option value="20">20 fps</option>
-      <option value="30">30 fps</option>
-    </select>
-    <button id="btnPause" data-i18n="pause">暂停</button>
-    <button id="btnFull" data-i18n="fullscreen">全屏</button>
-    <button id="langBtn">中文</button>
-    <span id="badge" data-i18n="transmitting">传输中</span>
+  <div id="topbar">
+    <a id="home-link" href="./index.html" data-i18n="home">◂ Home</a>
+    <span id="app-name" data-i18n="appName">Visual Transfer</span>
+    <span id="lang-btn" role="button" tabindex="0">中文</span>
   </div>
-</header>
 
-<div class="tabs">
-  <button class="tab active" data-tab="file" data-i18n="tabFile">文件</button>
-  <button class="tab" data-tab="text" data-i18n="tabText">文本</button>
-  <button class="tab" data-tab="image" data-i18n="tabImage">图片</button>
-</div>
-
-<div class="panel" id="panel-file">
-  <div id="dropzone">
-    <span data-i18n="dropHint">拖放文件到这里，或点击选择文件</span>
-    <input type="file" id="fileInput" hidden>
-  </div>
-  <div class="muted" style="margin-top:8px" data-i18n="sizeHint">大文件建议 ≤ 30MB；文件越大，扫描耗时越长。</div>
-</div>
-
-<div class="panel" id="panel-text" hidden>
-  <textarea id="txt" data-i18n-ph="txtPlaceholder" placeholder="粘贴或输入要传输的文字…"></textarea>
-  <div class="row">
-    <button id="btnSendText" data-i18n="btnSendText">开始传输文本</button>
-    <span class="muted" id="textInfo"></span>
-  </div>
-</div>
-
-<div class="panel" id="panel-image" hidden>
-  <div class="row">
-    <button id="btnPickImg" data-i18n="btnPickImg">选择图片</button>
-    <input type="file" id="imgInput" accept="image/*" hidden>
-    <span class="muted" data-i18n="dragHint">支持拖入 / 粘贴（Ctrl+V）</span>
-  </div>
-  <div class="row">
-    <img id="imgPreview" alt="preview">
-    <div>
-      <div class="muted" id="imgInfo"></div>
-      <button id="btnSendImg" style="margin-top:6px" disabled data-i18n="btnSendImg">开始传输图片</button>
+  <div id="stage">
+    <div id="dragdrop">
+      <canvas id="canvas"></canvas>
+      <div id="tap-hint"><span data-i18n="tapHint1">Drag &amp; drop a file anywhere</span><br><span data-i18n="tapHint2">or use the</span> <b data-i18n="tapHint3">File</b> <span data-i18n="tapHint4">button below</span></div>
+      <div id="invisible_click" title="Click to choose a file"></div>
     </div>
   </div>
-</div>
 
-<canvas id="cimbar"></canvas>
+  <div id="panels">
+    <div id="panel-file" class="panel">
+      <h3 data-i18n="fileTitle">Send a File</h3>
+      <div class="row">
+        <button class="primary" onclick="Main.chooseFile()" data-i18n="chooseFile">Choose File</button>
+      </div>
+      <p class="hint" data-i18n="fileHint">You can also drag &amp; drop a file anywhere on this window, or click directly on the QR area.</p>
+    </div>
 
-<div id="status"></div>
+    <div id="panel-text" class="panel">
+      <h3 data-i18n="textTitle">Send Text</h3>
+      <textarea id="txt" placeholder="Paste or type the text to transfer…" data-i18n-ph="textPh"></textarea>
+      <div class="row">
+        <button class="primary" onclick="Main.sendTextNow()" data-i18n="sendText">Send Text</button>
+      </div>
+    </div>
 
-<script>
-/* ---------- i18n：默认英文，可切换中文，选择本地记住 ---------- */
-(function () {
-  var LANG_KEY = 'cimbar-lang';
-  var I18N = {
-    en: {
-      title: 'Visual Transfer · Sender',
-      home: 'Home',
-      fpsLabel: 'Frame rate',
-      fpsHint: 'Encoding animation refresh rate (higher is better if the decoder keeps up)',
-      pause: 'Pause',
-      resume: 'Resume',
-      fullscreen: 'Fullscreen',
-      transmitting: 'Transmitting',
-      tabFile: 'File',
-      tabText: 'Text',
-      tabImage: 'Image',
-      dropHint: 'Drop files here, or click to choose',
-      sizeHint: 'Large files: ≤ 30 MB recommended; bigger files take longer to scan.',
-      txtPlaceholder: 'Paste or type the text to transfer…',
-      btnSendText: 'Send Text',
-      btnPickImg: 'Choose Image',
-      dragHint: 'Drag & drop or paste (Ctrl+V) supported',
-      btnSendImg: 'Send Image',
-      initWait: 'Initializing…',
-      libNotReady: 'Decoder library not ready yet, please wait…',
-      typeFile: 'File',
-      typeText: 'Text',
-      typeImage: 'Image',
-      statusStart: 'Type: {type}\nName: {name}\nData: {size} KB (incl. header)\nEst. frames: {frames} frames, about {sec}s @ {fps}fps (estimate)\nTip: keep the screen bright and steady; point the phone camera at the whole animation',
-      encodeFail: 'Encode failed',
-      framesRendered: 'Rendered frames: {n}',
-      ready: 'Ready: pick a file / text / image to start.',
-      initFail: 'Initialization failed',
-      initTimeout: 'Initialization failed or still loading… Open via HTTPS or localhost (file:// cannot load WASM).',
-      kb: 'KB',
-      textFileName: 'text.txt',
-      imgInfo: 'Original {orig} KB → compressed {now} KB (max side 1600px, JPEG 0.85)',
-      imgFail: 'Image processing failed',
-      imgReadFail: 'Failed to read image',
-      imageName: 'Image',
-      httpsWarn: 'Note: not on HTTPS/localhost — the receiver camera will be unavailable. Deploy to GitHub Pages first.'
-    },
-    zh: {
-      title: '视觉传输 · 发送端',
-      home: '首页',
-      fpsLabel: '帧率',
-      fpsHint: '编码动画刷新帧率（解码端越快越稳则越高）',
-      pause: '暂停',
-      resume: '继续',
-      fullscreen: '全屏',
-      transmitting: '传输中',
-      tabFile: '文件',
-      tabText: '文本',
-      tabImage: '图片',
-      dropHint: '拖放文件到这里，或点击选择文件',
-      sizeHint: '大文件建议 ≤ 30MB；文件越大，扫描耗时越长。',
-      txtPlaceholder: '粘贴或输入要传输的文字…',
-      btnSendText: '开始传输文本',
-      btnPickImg: '选择图片',
-      dragHint: '支持拖入 / 粘贴（Ctrl+V）',
-      btnSendImg: '开始传输图片',
-      initWait: '等待初始化…',
-      libNotReady: '解码库尚未就绪，请稍候…',
-      typeFile: '文件',
-      typeText: '文本',
-      typeImage: '图片',
-      statusStart: '类型: {type}\n名称: {name}\n数据量: {size} KB（含头部）\n预计帧数: {frames} 帧，约 {sec} 秒 @ {fps}fps（估算）\n提示: 保持屏幕全亮度、画面稳定，让手机摄像头对准整个编码画面',
-      encodeFail: '编码失败',
-      framesRendered: '已渲染帧: {n}',
-      ready: '就绪：选择文件 / 文本 / 图片后开始传输。',
-      initFail: '初始化失败',
-      initTimeout: '初始化失败或仍在加载… 请确认通过 HTTPS 或 localhost 打开（file:// 无法加载 WASM）。',
-      kb: 'KB',
-      textFileName: '文本.txt',
-      imgInfo: '原 {orig} KB → 压缩后 {now} KB（最长边 1600px, JPEG 0.85）',
-      imgFail: '图片处理失败',
-      imgReadFail: '图片读取失败',
-      imageName: '图片',
-      httpsWarn: '注意：当前非 HTTPS/localhost 环境，接收端摄像头将不可用。请部署到 GitHub Pages 后使用。'
-    }
-  };
-  var lang = 'en';
-  try { var saved = localStorage.getItem(LANG_KEY); if (saved && I18N[saved]) lang = saved; } catch (e) {}
-  function t(key, vars) {
-    var s = (I18N[lang] && I18N[lang][key]) || key;
-    if (vars) { for (var k in vars) { s = s.split('{' + k + '}').join(String(vars[k])); } }
-    return s;
-  }
-  function applyLang() {
-    document.documentElement.lang = (lang === 'zh') ? 'zh-CN' : 'en';
-    document.title = t('title');
-    document.querySelectorAll('[data-i18n]').forEach(function (el) {
-      el.textContent = t(el.getAttribute('data-i18n'));
-    });
-    document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
-      el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph')));
-    });
-    document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
-      el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
-    });
-    document.getElementById('langBtn').textContent = (lang === 'en') ? '中文' : 'English';
-    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
-  }
-  document.getElementById('langBtn').addEventListener('click', function () {
-    lang = (lang === 'en') ? 'zh' : 'en';
-    applyLang();
-    if (window.__onLangChange) window.__onLangChange();
-  });
-  applyLang();
-})();
-</script>
+    <div id="panel-image" class="panel">
+      <h3 data-i18n="imageTitle">Send an Image</h3>
+      <div class="row">
+        <button class="secondary" onclick="Main.pickImageNow()" data-i18n="chooseImage">Choose Image</button>
+      </div>
+      <img id="img-preview" hidden>
+      <div class="row">
+        <button class="primary" id="btn-send-img" disabled onclick="Main.sendImageNow()" data-i18n="sendImage">Send Image</button>
+      </div>
+      <p class="hint" data-i18n="imageHint">Images are compressed to JPEG (max 1600px) before sending.</p>
+    </div>
+  </div>
 
-<script type="module">
-import { Encoder, initCimbar } from './index.js';
+  <div id="controls">
+    <div class="btn-group">
+      <button class="mode-btn active" id="btn-file" onclick="Main.togglePanel('file')" data-i18n="file">File</button>
+      <button class="mode-btn" id="btn-text" onclick="Main.togglePanel('text')" data-i18n="text">Text</button>
+      <button class="mode-btn" id="btn-image" onclick="Main.togglePanel('image')" data-i18n="image">Image</button>
+    </div>
 
-const t = window.__t;
+    <div class="btn-group">
+      <span class="ctl-label" data-i18n="mode">Mode</span>
+      <span id="mode-static" data-i18n="modeColor">4C · Color</span>
+    </div>
 
-const TYPE_FILE = 0, TYPE_TEXT = 1, TYPE_IMAGE = 2;
-const canvas = document.getElementById('cimbar');
-const statusEl = document.getElementById('status');
-const badge = document.getElementById('badge');
+    <div class="btn-group">
+      <span class="ctl-label" data-i18n="segSize">Segment</span>
+      <select id="seg-select" onchange="Main.setSegSize(this.value)">
+        <option value="262144">256 KB</option>
+        <option value="524288" selected>512 KB</option>
+        <option value="1048576">1 MB</option>
+        <option value="2097152">2 MB</option>
+      </select>
+    </div>
 
-const Cimbar = {};
-let encoder = null;
-let fps = 15;
-let framesRendered = 0;
-let paused = false;
-let pendingImage = null;   // { bytes, name }
-let transferInfo = null;   // { type, name, sizeKB, estFrames, estSec }
-let statusMsg = null;      // { key, vars } 或 { plain }
-let lastImgInfo = null;    // { orig, now }
+    <div class="btn-group">
+      <span class="ctl-label" data-i18n="fps">Framerate</span>
+      <input type="range" id="fps-range" min="5" max="20" step="5" value="15" oninput="Main.setFPS(this.value)" onchange="Main.setFPS(this.value)">
+      <span id="fps-val">15</span>
+    </div>
 
-function absUrl(p) { return new URL(p, location.href).href; }
+    <button id="fullscreen-btn" onclick="Main.toggleFullscreen()" data-i18n="fullscreen">Fullscreen</button>
+  </div>
 
-function setStatusT(key, vars) {
-  statusMsg = { key: key, vars: vars || null };
-  statusEl.textContent = t(key, vars);
-}
-function setStatusP(text) {
-  statusMsg = { plain: text };
-  statusEl.textContent = text;
-}
-function renderStatus() {
-  const ti = transferInfo;
-  const typeName = ti.type === TYPE_TEXT ? t('typeText') : ti.type === TYPE_IMAGE ? t('typeImage') : t('typeFile');
-  statusEl.textContent = t('statusStart', {
-    type: typeName,
-    name: ti.name,
-    size: ti.sizeKB.toFixed(1),
-    frames: ti.estFrames,
-    sec: ti.estSec,
-    fps: fps
-  }) + '\n' + t('framesRendered', { n: framesRendered });
-}
+  <div id="progress"><div id="progress-bar"></div></div>
+  <div id="status"></div>
 
-/* ---------- CTXF 头部封装 ---------- */
-// 数据格式: "CTXF" + version(1) + type(1) + flags(1) + nameLen(2LE) + payloadLen(4LE) + name + payload
-function buildTransfer(type, name, payload) {
-  const te = new TextEncoder();
-  const nameBytes = te.encode(String(name || 'untitled').slice(0, 200));
-  const h = new Uint8Array(13);
-  h[0] = 0x43; h[1] = 0x54; h[2] = 0x58; h[3] = 0x46; // CTXF
-  h[4] = 1;                 // version
-  h[5] = type;              // 0 文件 / 1 文本 / 2 图片
-  h[6] = 0;                 // flags（预留压缩位）
-  h[7] = nameBytes.length & 0xff;
-  h[8] = (nameBytes.length >> 8) & 0xff;
-  h[9] = payload.length & 0xff;
-  h[10] = (payload.length >> 8) & 0xff;
-  h[11] = (payload.length >> 16) & 0xff;
-  h[12] = (payload.length >> 24) & 0xff;
-  const out = new Uint8Array(h.length + nameBytes.length + payload.length);
-  out.set(h, 0);
-  out.set(nameBytes, h.length);
-  out.set(payload, h.length + nameBytes.length);
-  return out;
-}
+  <input type="file" id="file_input" style="display:none" onchange="Main.fileInput(this)">
 
-/* ---------- 编码启动 ---------- */
-function startTransfer(type, name, bytes) {
-  if (!encoder) { setStatusT('libNotReady'); return; }
-  const u8 = buildTransfer(type, name, bytes);
-  const file = new File([u8], 'transfer.bin', { type: 'application/octet-stream' });
-  framesRendered = 0;
-  const estFrames = Math.ceil(u8.length / 7500); // B 模式单帧约 7.5KB（估算）
-  const estSec = Math.ceil(estFrames / fps);
-  transferInfo = { type: type, name: name, sizeKB: u8.length / 1024, estFrames: estFrames, estSec: estSec };
-  badge.classList.add('on');
-  renderStatus();
-  try { encoder.encode(file); } catch (e) { setStatusT('encodeFail'); setStatusP(t('encodeFail') + ': ' + e); }
-  keepAwake();
-}
-
-/* ---------- 防熄屏 ---------- */
-let wakeLock = null;
-async function keepAwake() {
-  try {
-    if ('wakeLock' in navigator && !wakeLock) {
-      wakeLock = await navigator.wakeLock.request('screen');
-      wakeLock.addEventListener('release', () => { wakeLock = null; });
-    }
-  } catch (e) { /* 忽略：部分浏览器不支持 */ }
-}
-
-/* ---------- 运行时初始化 ---------- */
-Cimbar.onRuntimeInitialized = () => {
-  try {
-    encoder = new Encoder(Cimbar, canvas);
-    encoder.onFrame = () => {
-      framesRendered += 1;
-      if (transferInfo) renderStatus();
+  <script type="text/javascript">
+  (function () {
+    var LANG_KEY = 'cimbar-lang';
+    var lang = 'en';
+    var I18N = {
+      en: {
+        title: 'Visual Transfer · Sender', home: '◂ Home', appName: 'Visual Transfer',
+        file: 'File', text: 'Text', image: 'Image', mode: 'Mode', segSize: 'Segment', fps: 'Framerate', fullscreen: 'Fullscreen',
+        modeColor: '4C · Color',
+        fileTitle: 'Send a File', chooseFile: 'Choose File',
+        fileHint: 'You can also drag & drop a file anywhere on this window, or click directly on the QR area.',
+        textTitle: 'Send Text', sendText: 'Send Text', textPh: 'Paste or type the text to transfer…',
+        imageTitle: 'Send an Image', chooseImage: 'Choose Image', sendImage: 'Send Image',
+        imageHint: 'Images are compressed to JPEG (max 1600px) before sending.',
+        tapHint1: 'Drag & drop a file anywhere', tapHint2: 'or use the', tapHint3: 'File', tapHint4: 'button below',
+        noFile: 'No file selected', encoding: 'Encoding', done: 'Done · all segments sent',
+        warnBigTitle: 'Large file warning',
+        warnBigMsg: 'This file is about {mb} MB. Visual transmission is slow (roughly 30–60 KB/s on a phone), so this may take {mins}–{mins2} minutes. Continue anyway?',
+        warnHugeTitle: 'Very large file',
+        warnHugeMsg: 'This file is about {mb} MB and may take {mins}+ minutes. Transmission is not guaranteed to complete before the phone runs out of patience. Continue anyway?',
+        canceled: 'Cancelled'
+      },
+      zh: {
+        title: '视觉传输 · 发送端', home: '◂ 首页', appName: '视觉传输',
+        file: '档案', text: '文本', image: '图片', mode: '模式', segSize: '段大小', fps: '帧率', fullscreen: '全屏',
+        modeColor: '4C · 彩色',
+        fileTitle: '发送档案', chooseFile: '选择档案',
+        fileHint: '也可以把档案拖放到本窗口任意位置，或直接点击二维码区域。',
+        textTitle: '发送文本', sendText: '开始发送文本', textPh: '粘贴或输入要传输的文字…',
+        imageTitle: '发送图片', chooseImage: '选择图片', sendImage: '开始发送图片',
+        imageHint: '图片会先压缩为 JPEG（最长边 1600px）再发送。',
+        tapHint1: '把档案拖放到任意位置', tapHint2: '或使用下方', tapHint3: '档案', tapHint4: '按钮',
+        noFile: '未选择档案', encoding: '编码中', done: '完成 · 所有段已发送',
+        warnBigTitle: '档案过大提醒',
+        warnBigMsg: '此档案约 {mb} MB。视觉传输较慢（手机实扫约 30–60 KB/s），预计需要 {mins}–{mins2} 分钟。确定继续吗？',
+        warnHugeTitle: '档案非常大',
+        warnHugeMsg: '此档案约 {mb} MB，预计耗时 {mins}+ 分钟，传输过程较长且可能扫不完。确定继续吗？',
+        canceled: '已取消'
+      }
     };
-    setStatusT('ready');
-  } catch (e) {
-    setStatusT('initFail');
-    setStatusP(t('initFail') + ': ' + e);
-  }
-};
-initCimbar(Cimbar, absUrl('./index.wasm'));
-setTimeout(() => {
-  if (!encoder) {
-    setStatusT('initTimeout');
-    document.getElementById('btnPause').textContent = t('pause');
-  }
-}, 12000);
-
-/* ---------- 帧率 / 暂停 / 全屏 ---------- */
-document.getElementById('fps').addEventListener('change', (e) => {
-  fps = parseInt(e.target.value, 10) || 15;
-  if (encoder && typeof encoder.interval === 'number') {
-    encoder.interval = Math.round(1000 / fps); // 兼容：interval 以毫秒计
-  }
-  if (transferInfo) renderStatus();
-});
-document.getElementById('btnPause').addEventListener('click', () => {
-  if (!encoder) return;
-  paused = !paused;
-  try { encoder.togglePause(paused); } catch (e) {}
-  document.getElementById('btnPause').textContent = t(paused ? 'resume' : 'pause');
-});
-document.getElementById('btnFull').addEventListener('click', () => {
-  if (document.fullscreenElement) { document.exitFullscreen(); }
-  else { document.documentElement.requestFullscreen().catch(() => {}); }
-});
-
-/* ---------- 页签 ---------- */
-document.querySelectorAll('.tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
-    tab.classList.add('active');
-    ['file', 'text', 'image'].forEach((k) => {
-      document.getElementById('panel-' + k).hidden = (k !== tab.dataset.tab);
-    });
-  });
-});
-
-/* ---------- 文件 ---------- */
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('fileInput');
-dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('over'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
-dropzone.addEventListener('drop', (e) => {
-  e.preventDefault(); dropzone.classList.remove('over');
-  if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
-
-function handleFile(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    startTransfer(TYPE_FILE, file.name, new Uint8Array(reader.result));
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-/* ---------- 文本 ---------- */
-document.getElementById('btnSendText').addEventListener('click', () => {
-  const txt = document.getElementById('txt').value;
-  if (!txt.trim()) return;
-  const bytes = new TextEncoder().encode(txt);
-  document.getElementById('textInfo').textContent = (bytes.length / 1024).toFixed(1) + ' ' + t('kb');
-  startTransfer(TYPE_TEXT, t('textFileName'), bytes);
-});
-
-/* ---------- 图片 ---------- */
-const imgInput = document.getElementById('imgInput');
-const imgInfoEl = document.getElementById('imgInfo');
-document.getElementById('btnPickImg').addEventListener('click', () => imgInput.click());
-imgInput.addEventListener('change', () => { if (imgInput.files[0]) handleImage(imgInput.files[0]); });
-
-document.addEventListener('paste', (e) => {
-  const items = e.clipboardData && e.clipboardData.items;
-  if (!items) return;
-  for (const it of items) {
-    if (it.type && it.type.indexOf('image') === 0) {
-      handleImage(it.getAsFile());
-      break;
+    try { var saved = localStorage.getItem(LANG_KEY); if (saved && I18N[saved]) lang = saved; } catch (e) {}
+    function t(key, vars) {
+      var s = (I18N[lang] && I18N[lang][key]) || key;
+      if (vars) { for (var k in vars) { s = s.split('{' + k + '}').join(String(vars[k])); } }
+      return s;
     }
-  }
-});
+    window.__t = t;
+    function apply() {
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+      document.title = t('title');
+      document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); });
+      document.querySelectorAll('[data-i18n-ph]').forEach(function (el) { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
+      var lb = document.getElementById('lang-btn');
+      if (lb) lb.textContent = lang === 'en' ? '中文' : 'English';
+      if (window.__onLangChange) window.__onLangChange();
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+      var lb = document.getElementById('lang-btn');
+      if (lb) lb.addEventListener('click', function () {
+        lang = lang === 'en' ? 'zh' : 'en';
+        try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+        apply();
+      });
+    });
+    apply();
+  })();
+  </script>
 
-async function handleImage(blob) {
-  try {
-    const bytes = await compressImage(blob, 1600, 0.85);
-    pendingImage = { bytes, name: (blob.name && blob.name.replace(/\.[^.]+$/, '') || t('imageName')) + '.jpg' };
-    const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
-    const preview = document.getElementById('imgPreview');
-    preview.src = url;
-    const orig = (blob.size / 1024).toFixed(1);
-    const now = (bytes.length / 1024).toFixed(1);
-    lastImgInfo = { orig: orig, now: now };
-    imgInfoEl.textContent = t('imgInfo', lastImgInfo);
-    document.getElementById('btnSendImg').disabled = false;
-  } catch (e) {
-    imgInfoEl.textContent = t('imgFail') + ': ' + e;
-  }
-}
+  <script type="text/javascript">
+  var Main = function () {
+    var _interval = 66;
+    var _pause = 0;
+    var _pendingImage = undefined;
+    var _modeVal = 4;
 
-async function compressImage(blob, maxDim, quality) {
-  const url = URL.createObjectURL(blob);
-  const img = await new Promise((res, rej) => {
-    const i = new Image();
-    i.onload = () => res(i);
-    i.onerror = () => rej(new Error(t('imgReadFail')));
-    i.src = url;
+    // 分段传输状态
+    var _queue = [];        // [{bytes, seq}]
+    var _segCur = -1;
+    var _segTotal = 0;
+    var _origSize = 0;
+    var _segSize = 524288;
+    var _currentName = '';
+    var _loopsNeeded = 2;       // 每段至少完整广播 2 轮
+    var _loopsGot = 0;
+    var _minSegMs = 4000;       // 每段最短播放时长（防极小载荷秒切）
+    var _segStart = 0;
+    var _segTimer = null;
+    var _encoder = null;        // qt-works Encoder 实例
+    var _engineReady = false;
+
+    /* ---------- CTXF v2 封装（13B 头 + name + [meta 12B] + payload） ----------
+       meta 仅文件分段时存在：seq LE32 + total LE32 + origSize LE32 */
+    function buildTransfer(type, name, seq, total, origSize, payload) {
+      var hasMeta = (type === 0 && total > 1) ? 1 : 0;
+      var te = new TextEncoder('utf-8');
+      var nameBytes = te.encode(String(name || 'untitled').slice(0, 200));
+      var payloadLen = payload.length;
+      var h = new Uint8Array(13);
+      h[0] = 0x43; h[1] = 0x54; h[2] = 0x58; h[3] = 0x46;   // "CTXF"
+      h[4] = 2;                                            // ver 2
+      h[5] = type;
+      h[6] = hasMeta;
+      h[7] = nameBytes.length & 0xff;
+      h[8] = (nameBytes.length >> 8) & 0xff;
+      h[9] = payloadLen & 0xff;
+      h[10] = (payloadLen >> 8) & 0xff;
+      h[11] = (payloadLen >> 16) & 0xff;
+      h[12] = (payloadLen >> 24) & 0xff;
+      var meta = new Uint8Array(hasMeta ? 12 : 0);
+      if (hasMeta) {
+        meta[0] = seq & 0xff; meta[1] = (seq >> 8) & 0xff; meta[2] = (seq >> 16) & 0xff; meta[3] = (seq >> 24) & 0xff;
+        meta[4] = total & 0xff; meta[5] = (total >> 8) & 0xff; meta[6] = (total >> 16) & 0xff; meta[7] = (total >> 24) & 0xff;
+        meta[8] = origSize & 0xff; meta[9] = (origSize >> 8) & 0xff; meta[10] = (origSize >> 16) & 0xff; meta[11] = (origSize >> 24) & 0xff;
+      }
+      var out = new Uint8Array(h.length + nameBytes.length + meta.length + payloadLen);
+      out.set(h, 0);
+      out.set(nameBytes, h.length);
+      out.set(meta, h.length + nameBytes.length);
+      out.set(payload, h.length + nameBytes.length + meta.length);
+      return out;
+    }
+
+    /* ---------- 引擎编码（qt-works Encoder） ---------- */
+    function encodeU8(u8, name) {
+      if (!_encoder) return;
+      Main.setTitle(name);
+      var f = new File([u8], 'seg.bin', { type: 'application/octet-stream' });
+      _loopsGot = 0;
+      _segStart = performance.now();
+      _encoder.encode(f);
+    }
+
+    function rateForMode() {
+      // 4C 手机实扫有效码率保守值（KB/s），用于每段兜底广播时长估算。
+      // 广播一轮 ≈ 段大小/20KBps（@15fps），本值略小于此，确保至少覆盖约 1 轮 +
+      // 慢手机的完整解码时间（30–60KB/s）。
+      return 25;
+    }
+
+    function updateProgress() {
+      var st = document.getElementById('status');
+      var pb = document.getElementById('progress');
+      var bar = document.getElementById('progress-bar');
+      if (_segTotal > 0 && _segCur >= 0) {
+        var frac = (_segCur + 1) / _segTotal;
+        st.innerHTML = window.__t('encoding') + ' · ' + (_segCur + 1) + '/' + _segTotal;
+        st.classList.add('active');
+        pb.classList.add('show');
+        bar.style.width = Math.round(frac * 100) + '%';
+      }
+    }
+
+    function finishAll() {
+      _queue = [];
+      var st = document.getElementById('status');
+      st.innerHTML = window.__t('done');
+      st.classList.remove('active');
+      setTimeout(function () {
+        st.innerHTML = window.__t('noFile');
+        var bar = document.getElementById('progress-bar');
+        bar.style.width = '0%';
+      }, 3000);
+    }
+
+    function advanceIfDue() {
+      if (_queue.length === 0) return;
+      if (_segCur >= _segTotal - 1) {
+        // 最后一段已广播足够轮次 → 完成
+        finishAll();
+        return;
+      }
+      _segCur += 1;   // 从 -1 → 0 开始，或切到下一段
+      var seg = _queue[_segCur];
+      var u8 = buildTransfer(0, _currentName, _segCur, _segTotal, _origSize, seg.bytes);
+      encodeU8(u8, _currentName);
+      updateProgress();
+      scheduleSegTimer(seg.bytes.length);
+    }
+
+    function scheduleSegTimer(segLen) {
+      if (_segTimer) { clearTimeout(_segTimer); _segTimer = null; }
+      var dur = Math.max(5000, Math.round(segLen / (rateForMode() * 1024) * 1000 + 4000));
+      _segTimer = setTimeout(function () {
+        // 兜底：循环检测失效时按估计时长强制切换
+        if (_segCur >= 0 && _segCur < _segTotal && _loopsGot < _loopsNeeded) {
+          advanceIfDue();
+        }
+      }, dur);
+    }
+
+    function onEncoderLoop() {
+      if (_encoder === null || _queue.length === 0) return;
+      _loopsGot += 1;
+      if (_loopsGot >= _loopsNeeded && performance.now() - _segStart >= _minSegMs) {
+        advanceIfDue();
+      }
+    }
+
+    /* 单发（文本/图片/小文件单段） */
+    function sendSingle(type, name, bytes) {
+      var u8 = buildTransfer(type, name, 0, 1, bytes.length, bytes);
+      _segCur = 0; _segTotal = 1; _currentName = name; _origSize = bytes.length;
+      _queue = [{ bytes: bytes, seq: 0 }];
+      encodeU8(u8, name);
+      var st = document.getElementById('status');
+      st.innerHTML = window.__t('encoding') + ' · ' + name;
+      st.classList.add('active');
+    }
+
+    /* 文件分段发送 */
+    function sendFileSegments(name, bytes) {
+      var len = bytes.length;
+      var total = Math.max(1, Math.ceil(len / _segSize));
+      _queue = [];
+      for (var i = 0; i < total; i++) {
+        var start = i * _segSize;
+        var end = Math.min(start + _segSize, len);
+        _queue.push({ bytes: bytes.slice(start, end), seq: i });
+      }
+      _segCur = -1;
+      _segTotal = total;
+      _origSize = len;
+      _currentName = name;
+      advanceIfDue();
+    }
+
+    function readWhole(file, done) {
+      var reader = new FileReader();
+      reader.onload = function (ev) { done(new Uint8Array(ev.target.result)); };
+      reader.onerror = function () { console.error('read failed'); };
+      reader.readAsArrayBuffer(file);
+    }
+
+    /* 大档提醒：>30MB 提醒，>60MB 强提醒 */
+    function confirmSize(len) {
+      var mb = Math.round(len / 1048576);
+      if (mb >= 60) {
+        var mins = Math.ceil(len / 1024 / 60 / 60);
+        return confirm(window.__t('warnHugeTitle') + '\n\n' + window.__t('warnHugeMsg', { mb: mb, mins: mins }));
+      }
+      if (mb >= 30) {
+        var mins2 = Math.ceil(len / 1024 / 60 / 45);
+        var mins1 = Math.ceil(len / 1024 / 60 / 60);
+        return confirm(window.__t('warnBigTitle') + '\n\n' + window.__t('warnBigMsg', { mb: mb, mins: mins1, mins2: mins2 }));
+      }
+      return true;
+    }
+
+    function startFileSend(name, bytes) {
+      if (!confirmSize(bytes.length)) {
+        var st = document.getElementById('status');
+        st.innerHTML = window.__t('canceled');
+        return;
+      }
+      if (bytes.length <= _segSize) {
+        sendSingle(0, name, bytes);
+      } else {
+        sendFileSegments(name, bytes);
+      }
+    }
+
+    function compressImage(blob, maxDim, quality) {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(blob);
+        var img = new Image();
+        img.onload = function () {
+          var w = img.naturalWidth, h = img.naturalHeight;
+          var scale = Math.min(1, maxDim / Math.max(w, h));
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          var c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          URL.revokeObjectURL(url);
+          c.toBlob(function (out) {
+            out.arrayBuffer().then(function (ab) { resolve(new Uint8Array(ab)); }, reject);
+          }, 'image/jpeg', quality);
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('img load failed')); };
+        img.src = url;
+      });
+    }
+
+    function handleImageBlob(blob) {
+      compressImage(blob, 1600, 0.85).then(function (bytes) {
+        var base = (blob.name && blob.name.replace(/\.[^.]+$/, '')) || 'image';
+        _pendingImage = { bytes: bytes, name: base + '.jpg' };
+        var imgEl = document.getElementById('img-preview');
+        imgEl.hidden = false;
+        imgEl.src = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+        document.getElementById('btn-send-img').disabled = false;
+      }).catch(function (e) { console.error('image compress failed', e); });
+    }
+
+    /* ---------- 公开接口 ---------- */
+    return {
+      init: function (canvas) {
+        canvas.width = 1040; canvas.height = 1040;
+        Main.resize();
+      },
+
+      resize: function () {
+        var canvas = document.getElementById('canvas');
+        var stage = document.getElementById('stage');
+        Main.scaleCanvas(canvas, stage.clientWidth, stage.clientHeight);
+        Main.alignInvisibleClick(canvas);
+      },
+
+      scaleCanvas: function (canvas, width, height) {
+        var idealRatio = 1;
+        var ourRatio = width / height;
+        var xdim, ydim;
+        if (ourRatio > idealRatio) { xdim = Math.floor(height * idealRatio); ydim = height; }
+        else { xdim = width; ydim = Math.floor(width / idealRatio); }
+        canvas.style.width = xdim + 'px';
+        canvas.style.height = ydim + 'px';
+        var hint = document.getElementById('tap-hint');
+        if (hint) { hint.style.maxWidth = xdim + 'px'; }
+      },
+
+      alignInvisibleClick: function (canvas) {
+        canvas = canvas || document.getElementById('canvas');
+        var cpos = canvas.getBoundingClientRect();
+        var inv = document.getElementById('invisible_click');
+        inv.style.width = canvas.style.width;
+        inv.style.height = canvas.style.height;
+        inv.style.left = cpos.left + 'px';
+        inv.style.top = cpos.top + 'px';
+      },
+
+      setEngine: function (enc) {
+        _encoder = enc;
+        _engineReady = true;
+      },
+      engineReady: function () { return _engineReady; },
+
+      onEncoderLoop: onEncoderLoop,
+
+      togglePause: function (pause) {
+        if (pause === undefined) { _pause = _pause ? 0 : 1; }
+        else { _pause = pause ? 1 : 0; }
+        if (_encoder) _encoder.togglePause(_pause > 0);
+      },
+
+      setSegSize: function (val) {
+        _segSize = parseInt(val, 10) || 524288;
+        try { localStorage.setItem('cimbar-segsize', String(_segSize)); } catch (e) {}
+      },
+
+      setFPS: function (val) {
+        if (!val) return;
+        _interval = Math.floor(1000 / val);
+        if (_encoder) _encoder.interval = _interval;
+        var v = document.getElementById('fps-val');
+        if (v) v.textContent = val;
+      },
+
+      toggleFullscreen: function () {
+        if (document.fullscreenElement) { document.exitFullscreen().catch(function () {}); }
+        else { document.documentElement.requestFullscreen().catch(function () {}); }
+      },
+
+      togglePanel: function (which) {
+        var panels = ['file', 'text', 'image'];
+        for (var i = 0; i < panels.length; i++) {
+          var p = document.getElementById('panel-' + panels[i]);
+          var b = document.getElementById('btn-' + panels[i]);
+          if (panels[i] === which) {
+            var show = p.classList.contains('show');
+            p.classList.toggle('show', !show);
+            b.classList.toggle('active', !show);
+          } else {
+            p.classList.remove('show');
+            b.classList.remove('active');
+          }
+        }
+        Main.togglePause(true);
+      },
+
+      chooseFile: function () {
+        document.getElementById('file_input').click();
+      },
+
+      fileInput: function (ev) {
+        var file = document.getElementById('file_input').files[0];
+        if (file) {
+          readWhole(file, function (bytes) { startFileSend(file.name, bytes); });
+        }
+        Main.togglePause(false);
+      },
+
+      sendTextNow: function () {
+        var el = document.getElementById('txt');
+        if (!el) return;
+        var s = el.value;
+        if (!s.trim()) return;
+        sendSingle(1, 'text.txt', new TextEncoder('utf-8').encode(s));
+        Main.togglePanel('text');
+        Main.togglePause(false);
+      },
+
+      pickImageNow: function () {
+        var inp = document.getElementById('img-input');
+        if (inp) inp.click();
+      },
+
+      imageInput: function (ev) {
+        var inp = document.getElementById('img-input');
+        if (inp && inp.files && inp.files[0]) handleImageBlob(inp.files[0]);
+        Main.togglePause(false);
+      },
+
+      sendImageNow: function () {
+        if (_pendingImage) {
+          sendSingle(2, _pendingImage.name, _pendingImage.bytes);
+          _pendingImage = null;
+          document.getElementById('btn-send-img').disabled = true;
+          Main.togglePanel('image');
+          Main.togglePause(false);
+        }
+      },
+
+      dragDrop: function (event) {
+        var files = event.dataTransfer.files;
+        if (files && files.length === 1) {
+          readWhole(files[0], function (bytes) { startFileSend(files[0].name, bytes); });
+        }
+      },
+
+      setTitle: function (msg) {
+        document.title = window.__t('title') + ' — ' + msg;
+      },
+
+      segmentState: function () {
+        return { cur: _segCur, total: _segTotal };
+      },
+
+      /* 测试/桥接 */
+      startFileSend: startFileSend,
+      sendSingle: sendSingle,
+      sendFileSegments: sendFileSegments,
+      handleImageBlob: handleImageBlob,
+      advanceIfDue: advanceIfDue
+    };
+  }();
+  </script>
+
+  <script type="text/javascript">
+  /* ---------- qt-works 引擎初始化（主线程，无需 Worker） ---------- */
+  (function () {
+    var Cimbar = {};
+    window.__Cimbar = Cimbar;
+    Cimbar.onRuntimeInitialized = function () {
+      try {
+        var canvas = document.getElementById('canvas');
+        Main.init(canvas);
+        import('./index.js').then(function (m) {
+          var enc = new m.Encoder(Cimbar, canvas);
+          enc.interval = 66;
+          Main.setEngine(enc);
+          // 循环检测补丁：_next_frame 返回帧计数，循环重启时计数回退
+          var orig = Cimbar._next_frame.bind(Cimbar);
+          var prev = -1;
+          Cimbar._next_frame = function () {
+            var r;
+            try { r = orig(); } catch (e) { r = prev + 1; }
+            if (prev >= 1 && r <= prev) Main.onEncoderLoop();
+            prev = r;
+            return r;
+          };
+          Main.setFPS(15);
+          var st = document.getElementById('status');
+          st.innerHTML = window.__t('noFile');
+        }).catch(function (e) {
+          var st = document.getElementById('status');
+          st.innerHTML = 'Engine load failed: ' + (e && e.message ? e.message : e);
+        });
+      } catch (e) {
+        var st = document.getElementById('status');
+        st.innerHTML = 'Init failed: ' + (e && e.message ? e.message : e);
+      }
+    };
+    import('./index.js').then(function (m) {
+      m.initCimbar(Cimbar, new URL('./index.wasm', location.href).href);
+    }).catch(function (e) {
+      var st = document.getElementById('status');
+      st.innerHTML = 'Engine import failed: ' + (e && e.message ? e.message : e);
+    });
+  })();
+  </script>
+
+  <script type="text/javascript">
+  /* 事件 */
+  window.addEventListener('keydown', function (e) {
+    e = e || event;
+    if (e.key == 'Escape' || e.keyCode == 27) { Main.togglePause(true); e.preventDefault(); }
+    else if (e.key == 'Enter' || e.keyCode == 13) {
+      if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;
+      Main.togglePanel('file'); e.preventDefault();
+    }
+  }, true);
+
+  window.addEventListener('touchstart', function (e) { Main.togglePause(true); }, false);
+  window.addEventListener('touchend', function (e) { Main.togglePause(false); }, false);
+  window.addEventListener('touchcancel', function (e) { Main.togglePause(false); }, false);
+
+  window.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    document.body.style.opacity = 0.5;
+  }, false);
+  window.addEventListener('dragleave', function (e) {
+    e.preventDefault();
+    document.body.style.opacity = 1.0;
+  }, false);
+  window.addEventListener('drop', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    Main.dragDrop(e);
+    document.body.style.opacity = 1.0;
+  }, false);
+
+  window.addEventListener('paste', function (e) {
+    var items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.indexOf('image') === 0) {
+        var f = items[i].getAsFile();
+        if (f) { Main.pickImageNow(); return; }
+      }
+    }
   });
-  let w = img.naturalWidth, h = img.naturalHeight;
-  const scale = Math.min(1, maxDim / Math.max(w, h));
-  w = Math.max(1, Math.round(w * scale));
-  h = Math.max(1, Math.round(h * scale));
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  c.getContext('2d').drawImage(img, 0, 0, w, h);
-  URL.revokeObjectURL(url);
-  const out = await new Promise((res) => c.toBlob(res, 'image/jpeg', quality));
-  return new Uint8Array(await out.arrayBuffer());
-}
 
-document.getElementById('btnSendImg').addEventListener('click', () => {
-  if (pendingImage) startTransfer(TYPE_IMAGE, pendingImage.name, pendingImage.bytes);
-});
+  window.addEventListener('resize', function () { Main.resize(); });
 
-/* ---------- 语言切换时刷新动态文本 ---------- */
-window.__onLangChange = () => {
-  if (transferInfo) { renderStatus(); }
-  else if (statusMsg) { statusEl.textContent = statusMsg.key ? t(statusMsg.key, statusMsg.vars) : statusMsg.plain; }
-  document.getElementById('btnPause').textContent = t(paused ? 'resume' : 'pause');
-  if (lastImgInfo) { imgInfoEl.textContent = t('imgInfo', lastImgInfo); }
-};
+  document.addEventListener('DOMContentLoaded', function () {
+    try {
+      var saved = localStorage.getItem('cimbar-segsize');
+      if (saved) { Main.setSegSize(saved); }
+    } catch (e) {}
+    var inp = document.createElement('input');
+    inp.type = 'file';
+    inp.id = 'img-input';
+    inp.accept = 'image/*';
+    inp.style.display = 'none';
+    inp.onchange = function () { Main.imageInput(inp); };
+    document.body.appendChild(inp);
+  });
 
-/* ---------- 初始状态 ---------- */
-statusEl.textContent = t('initWait');
-if (typeof window.__onLangChange === 'function') window.__onLangChange();
-
-/* ---------- 入口页跳转提示 ---------- */
-if (!location.protocol.startsWith('https') && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-  setStatusT('httpsWarn');
-}
-</script>
+  /* 调试/测试句柄 */
+  window.__senderTest = {
+    engineReady: function () { return Main.engineReady(); },
+    segmentState: function () { return Main.segmentState(); },
+    sendTextNow: function (txt) { document.getElementById('txt').value = txt; Main.sendTextNow(); },
+    sendSingle: function (type, name, bytes) { Main.sendSingle(type, name, bytes); },
+    startFileSend: function (name, bytes) { Main.startFileSend(name, bytes); },
+    canvasDataUrlLen: function () { return document.getElementById('canvas').toDataURL().length; },
+    advance: function () { Main.advanceIfDue(); }
+  };
+  </script>
 </body>
 </html>
