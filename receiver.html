@@ -15,7 +15,7 @@
     font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
     overflow: hidden;
   }
-  /* 全屏摄像头画面（参考官方 decoder 架构：video 铺满全屏，控件悬浮不遮挡画面） */
+  /* 全屏摄像头画面（官方 decoder 架构：video 铺满全屏，控件悬浮不遮挡画面） */
   #stage { position: fixed; inset: 0; z-index: 0; background: #000; }
   #video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
   #scan { display: none; }
@@ -28,9 +28,7 @@
   }
   #align.ok { background: rgba(47,125,79,.5); color: #7ee2a0; }
   #align.bad { background: rgba(200,60,50,.5); color: #ff9d94; }
-  /* 目标取景框：实测解码甜点区是"QR 约占画面宽度 55-62%"。但方形 QR 在 16:9 画面里
-     高度 = 宽度，超过画面高度（1280x720 下 >720px = 占宽 >56.25%）会被上下裁切导致定位失败
-     （实测 55% 可解、58% 裁切失败）。因此框宽取 55%，引导用户把 QR 对进框内。 */
+  /* 目标取景框：QR 约占画面宽度 55%（方形 QR 高度=宽度，超过 16:9 画面高度会被上下裁切） */
   #frame {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     width: 55%; aspect-ratio: 1/1; border: 2px dashed rgba(255,255,255,.4);
@@ -81,10 +79,6 @@
   button:disabled { opacity: .4; cursor: not-allowed; }
   button.primary { background: #ff6600; color: #000; border-color: #ff6600; font-weight: 700; }
   .file-in { position: absolute; left: -9999px; }
-  #controls select {
-    background: rgba(17,17,17,.9); color: #ff6600; border: 1px solid #333; border-radius: 8px;
-    padding: 9px 8px; font-size: 14px; max-width: 130px;
-  }
   /* 结果：底部悬浮卡片（不挡取景） */
   #result {
     position: fixed; left: 10px; right: 10px; bottom: 66px; z-index: 30;
@@ -130,8 +124,6 @@
   #drawer .h-name { flex: 1; min-width: 100px; word-break: break-all; }
   #drawer .h-meta { color: #666; font-size: 12px; }
   #drawer a, #drawer button { font-size: 12px; padding: 4px 10px; }
-  .minibar { height: 4px; background: #1a1a1a; border-radius: 2px; margin-top: 6px; overflow: hidden; }
-  .minibar-fill { height: 100%; background: #ff6600; transition: width .3s; }
 </style>
 </head>
 <body>
@@ -160,12 +152,6 @@
   <button id="btnStop" disabled data-i18n="btnStop">Stop</button>
   <label class="btn" for="imgFile"><span data-i18n="testImg">Decode Image (test)</span></label>
   <input type="file" id="imgFile" class="file-in" accept="image/*" hidden>
-  <label class="btn" for="ecc-sel"><span data-i18n="ecc">Error Tolerance</span></label>
-  <select id="ecc-sel" onchange="window.setECC(this.value)">
-    <option value="0" data-i18n="eccStd">Standard</option>
-    <option value="32" data-i18n="eccHigh">High</option>
-    <option value="48" data-i18n="eccUltra">Ultra</option>
-  </select>
   <button id="btnHistory" data-i18n="historyTitle">Received</button>
 </div>
 
@@ -176,10 +162,6 @@
   <div class="drawer-head">
     <span data-i18n="historyTitle">Received</span>
     <button id="btnDrawerClose">✕</button>
-  </div>
-  <div id="activeTransfers">
-    <h2 data-i18n="transfersTitle">In-progress transfers</h2>
-    <ul id="activeList"></ul>
   </div>
   <div id="history">
     <h2 data-i18n="historyTitle">Received history</h2>
@@ -213,7 +195,6 @@
       typeText: 'Text',
       typeImage: 'Image',
       recvDone: 'Received: {name} ({size})\nTap "Start Scan" to receive the next file',
-      noHeaderNote: 'Note: received raw data without a header, saved as received.bin',
       copyText: 'Copy Text',
       copied: 'Copied',
       copyFail: 'Copy failed — select manually',
@@ -223,9 +204,7 @@
       readyMeta: 'Ready: tap "Start Scan", point the camera at the animation on screen.',
       progressMeta: 'Decoding… {p}%',
       camOnMeta: 'Camera on: {w}×{h}\nPoint at the encoded animation',
-      noProgressHint: 'No frames recognized for a while. Move the animation inside the dashed frame (~55% of screen — bigger overflows the frame and also fails). On the sender: drag the QR away from glare, enlarge it, or raise error tolerance (ECC).',
-      ecc: 'Error Tolerance', eccStd: 'Standard', eccHigh: 'High', eccUltra: 'Ultra',
-      eccNote: 'Must match the sender\u2019s Error Tolerance setting.',
+      noProgressHint: 'No frames recognized for a while. Move the animation inside the dashed frame (~55% of screen — bigger overflows the frame and also fails). On the sender: drag the QR away from glare or enlarge it.',
       camErr: 'Camera error: {msg}. Allow camera permission in the browser and open via HTTPS/localhost.',
       decodeErr: 'Decode error (code {code}): unsteady frame or dropped frames — hold steady, avoid glare, rescan.',
       initFail: 'Decoder initialization failed',
@@ -236,9 +215,7 @@
       imgDecodeFail: 'Image decode failed',
       stopped: 'Stopped.',
       transfersTitle: 'In-progress transfers',
-      segProgress: '{got} / {total} segments',
-      segDone: 'Complete: {name} ({size}) · {total} segments',
-      segStoreFail: 'Could not save segment (private mode / storage full?)'
+      segProgress: '{p}% decoded'
     },
     zh: {
       title: '视觉传输 · 接收端',
@@ -261,7 +238,6 @@
       typeText: '文本',
       typeImage: '图片',
       recvDone: '接收完成：{name}（{size}）\n点击"开始扫描"可接收下一个文件',
-      noHeaderNote: '注：收到无头部封装的原始数据，已按文件保存为 received.bin',
       copyText: '复制文本',
       copied: '已复制',
       copyFail: '复制失败，请手动选择',
@@ -271,9 +247,7 @@
       readyMeta: '就绪：点击"开始扫描"，将手机摄像头对准电脑屏幕上的编码动画。',
       progressMeta: '解码中… 进度 {p}%',
       camOnMeta: '摄像头已开启：{w}×{h}\n请对准屏幕上的编码画面',
-      noProgressHint: '長時間沒識別到畫面。請把動畫調整到虛線框內（約佔畫面五成半；太大超出框也會掃不到）。若仍無效，請到發送端：①把 QR 拖離反光處 ②調大 QR ③提高容錯率（ECC）。',
-      ecc: '容錯率', eccStd: '標準', eccHigh: '高', eccUltra: '最高',
-      eccNote: '必須與發送端的容錯率設定一致。',
+      noProgressHint: '長時間沒識別到畫面。請把動畫調整到虛線框內（約佔畫面五成半；太大超出框也會掃不到）。若仍無效，請到發送端：①把 QR 拖離反光處 ②調大 QR。',
       camErr: '摄像头错误：{msg}。请在浏览器地址栏允许摄像头权限，并使用 HTTPS/localhost 打开。',
       decodeErr: '解码出错（代码 {code}）：画面不稳或帧丢失，请保持手机稳定、避免反光后重扫。',
       initFail: '解码器初始化失败',
@@ -284,9 +258,7 @@
       imgDecodeFail: '图片解码失败',
       stopped: '已停止。',
       transfersTitle: '接收中的传输',
-      segProgress: '已收 {got} / {total} 段',
-      segDone: '全部接收完成：{name}（{size}）· {total} 段',
-      segStoreFail: '无法保存数据段（可能处于隐私模式或存储已满）'
+      segProgress: '已解码 {p}%'
     }
   };
   var lang = 'en';
@@ -306,9 +278,6 @@
     document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
       el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph')));
     });
-    document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
-      el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
-    });
     document.getElementById('langBtn').textContent = (lang === 'en') ? '中文' : 'English';
     var fr = document.getElementById('frame');
     if (fr) fr.setAttribute('data-hint', t('frameHint'));
@@ -323,719 +292,488 @@
 })();
 </script>
 
-<script type="module">
-import { initCimbar } from './index.js';
-
-const t = window.__t;
-
-const TYPE_FILE = 0, TYPE_TEXT = 1, TYPE_IMAGE = 2;
-const TYPE_MIME = { 0: 'application/octet-stream', 1: 'text/plain;charset=utf-8', 2: 'image/jpeg' };
-function typeLabel(type) {
-  return type === TYPE_TEXT ? t('typeText') : type === TYPE_IMAGE ? t('typeImage') : t('typeFile');
-}
-function isValidType(type) { return type >= TYPE_FILE && type <= TYPE_IMAGE; }
-
-const video = document.getElementById('video');
-const scanCanvas = document.getElementById('scan');
-const btnScan = document.getElementById('btnScan');
-const btnStop = document.getElementById('btnStop');
-const alignEl = document.getElementById('align');
-const progressBar = document.getElementById('progressBar');
-const metaEl = document.getElementById('meta');
-const errEl = document.getElementById('err');
-const resultEl = document.getElementById('result');
-const historyList = document.getElementById('historyList');
-
-const Cimbar = {};
-let decoder = null;
-let scanning = false;
-let streamRef = null, scanRaf = 0, lastDecodeAt = 0;
-let noDataSince = 0, noDataShown = false;   // 无进展提示计时
-let lastRec = null;          // 最近一次接收结果（语言切换时重绘）
-let metaKey = null, metaVars = null;
-let alignKey = null, alignOk = null;
-
-function absUrl(p) { return new URL(p, location.href).href; }
-function showErr(msg) { errEl.style.display = 'block'; errEl.textContent = msg; }
-function hideErr() { errEl.style.display = 'none'; }
-function setMeta(key, vars) { metaKey = key; metaVars = vars || null; metaEl.textContent = t(key, vars); }
-function setAlign(key, ok) { alignKey = key; alignOk = ok || null; alignEl.className = ok ? 'ok' : (ok === false ? 'bad' : ''); alignEl.textContent = t(key); }
-function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1024).toFixed(1) + ' KB'; }
-function fmtTime(t) {
-  const d = new Date(t);
-  const p = (x) => (x < 10 ? '0' : '') + x;
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
-}
-function safeName(n) {
-  return String(n || 'received').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 200) || 'received';
-}
-
-/* ---------- CTXF v2 解析（13B 头 + name + [meta 12B] + payload） ----------
-   v1：magic + ver=1 + type + flags + nameLen + payloadLen + name + payload
-   v2：同上，flags bit0=1 时 name 后有 meta：seq LE32 + total LE32 + origSize LE32 */
-function parseTransfer(u8) {
-  if (u8.length < 13) return null;
-  const magic = String.fromCharCode(u8[0], u8[1], u8[2], u8[3]);
-  if (magic !== 'CTXF') return null;
-  const ver = u8[4];
-  if (ver !== 1 && ver !== 2) return null;
-  const type = u8[5];
-  const flags = u8[6];
-  const nameLen = u8[7] | (u8[8] << 8);
-  const plen = (u8[9] | (u8[10] << 8) | (u8[11] << 16) | (u8[12] << 24)) >>> 0;
-  const hasMeta = (ver === 2 && (flags & 1) === 1) ? 12 : 0;
-  if (13 + nameLen + hasMeta + plen !== u8.length) return null;
-  const name = new TextDecoder().decode(u8.subarray(13, 13 + nameLen));
-  const metaStart = 13 + nameLen;
-  let seq = 0, total = 1, origSize = plen;
-  if (hasMeta) {
-    seq = (u8[metaStart] | (u8[metaStart + 1] << 8) | (u8[metaStart + 2] << 16) | (u8[metaStart + 3] << 24)) >>> 0;
-    total = (u8[metaStart + 4] | (u8[metaStart + 5] << 8) | (u8[metaStart + 6] << 16) | (u8[metaStart + 7] << 24)) >>> 0;
-    origSize = (u8[metaStart + 8] | (u8[metaStart + 9] << 8) | (u8[metaStart + 10] << 16) | (u8[metaStart + 11] << 24)) >>> 0;
-  }
-  const payload = u8.subarray(metaStart + hasMeta);
-  return { ver, type, name, payload, seq, total, origSize };
-}
-
-/* ---------- 接收完成 ---------- */
-function handleSuccess(data) {
-  const u8 = data instanceof Uint8Array ? data : new Uint8Array(data);
-  const parsed = parseTransfer(u8);
-  if (parsed && parsed.type === TYPE_FILE && parsed.total > 1) {
-    // 分段传输：存入 IndexedDB 续传，扫描保持继续等待下一段
-    handleSegment(parsed).catch((e) => {
-      console.warn('segment store failed:', e);
-      showErr(t('segStoreFail'));
-    });
-    return;
-  }
-  let rec;
-  if (parsed) {
-    // 发送端对小载荷做了 padding（≥1KB 保证帧可解），v2 meta 的 origSize 为真实长度，
-    // 必须按 origSize 截断，否则文本/图片会混入填充字节。
-    const raw = parsed.payload;
-    const effLen = (parsed.origSize && parsed.origSize > 0 && parsed.origSize < raw.length) ? parsed.origSize : raw.length;
-    rec = {
-      name: safeName(parsed.name),
-      type: isValidType(parsed.type) ? parsed.type : TYPE_FILE,
-      size: effLen,
-      blob: new Blob([raw.slice(0, effLen)], { type: TYPE_MIME[isValidType(parsed.type) ? parsed.type : 0] }),
-      text: (isValidType(parsed.type) && parsed.type === TYPE_TEXT) ? new TextDecoder().decode(raw.slice(0, effLen)) : undefined,
-    };
-  } else {
-    // 兼容：旧版无 CTXF 头的原始数据流（如官方 cimbar.org）
-    rec = { name: 'received.bin', type: TYPE_FILE, size: u8.length, blob: new Blob([u8]) };
-    showErr(t('noHeaderNote'));
-  }
-  lastRec = rec;
-  renderResult(rec);
-  saveToDB(rec);
-  setScanState(false);
-  stopScan();   // 完成后关摄像头，避免继续扫描空帧
-  setMeta('recvDone', { name: rec.name, size: fmtSize(rec.size) });
-  rebuildDecoder();   // 完成一次传输后重建，支持连续接收下一个文件
-}
-
-/* ---------- 分段续传 ---------- */
-async function handleSegment(parsed) {
-  const name = safeName(parsed.name);
-  let rec = await getTransfer(name);
-  if (!rec) {
-    rec = { name, origSize: parsed.origSize || 0, total: parsed.total, chunks: {}, time: Date.now() };
-  }
-  if (!rec.chunks[parsed.seq]) {
-    rec.chunks[parsed.seq] = new Blob([parsed.payload], { type: 'application/octet-stream' });
-    rec.total = parsed.total;
-    rec.origSize = parsed.origSize || rec.origSize;
-    await putTransfer(rec);
-  }
-  refreshActiveTransfers();
-  const got = Object.keys(rec.chunks).length;
-  if (got >= rec.total) {
-    const parts = [];
-    for (let i = 0; i < rec.total; i++) {
-      if (rec.chunks[i]) parts.push(rec.chunks[i]);
-    }
-    const blob = new Blob(parts, { type: TYPE_MIME[TYPE_FILE] });
-    await deleteTransfer(name);
-    const done = { name, type: TYPE_FILE, size: rec.origSize || blob.size, blob };
-    lastRec = done;
-    renderResult(done);
-    saveToDB(done);
-    refreshActiveTransfers();
-    setMeta('segDone', { name, size: fmtSize(done.size), total: rec.total });
-    setScanState(false);
-    stopScan();   // 完成后关摄像头，避免继续扫描空帧
-    rebuildDecoder();   // 完成一次传输后重建，支持连续接收下一个文件
-  } else {
-    setMeta('segProgress', { name, got, total: rec.total });
-  }
-}
-
-function renderResult(rec) {
-  resultEl.innerHTML = '';
-  const card = document.createElement('div');
-  card.className = 'card';
-
-  const tp = document.createElement('div');
-  tp.className = 'type';
-  tp.textContent = typeLabel(rec.type);
-  const n = document.createElement('div');
-  n.className = 'name';
-  n.textContent = rec.name;
-  const s = document.createElement('div');
-  s.className = 'size';
-  s.textContent = fmtSize(rec.size);
-  card.appendChild(tp); card.appendChild(n); card.appendChild(s);
-
-  const url = URL.createObjectURL(rec.blob);
-
-  if (rec.type === TYPE_TEXT) {
-    const pre = document.createElement('pre');
-    pre.textContent = (rec.text !== undefined && rec.text !== '') ? rec.text : t('decodeFail');
-    card.appendChild(pre);
-    const acts = document.createElement('div');
-    acts.className = 'acts';
-    const copy = document.createElement('button');
-    copy.textContent = t('copyText');
-    copy.addEventListener('click', () => {
-      rec.blob.text().then((txt) => {
-        (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject(new Error('no clipboard')))
-          .then(() => { copy.textContent = t('copied'); })
-          .catch(() => {
-            const ta = document.createElement('textarea');
-            ta.value = txt; document.body.appendChild(ta); ta.select();
-            try { document.execCommand('copy'); copy.textContent = t('copied'); } catch (e) { copy.textContent = t('copyFail'); }
-            document.body.removeChild(ta);
-          });
-      });
-    });
-    acts.appendChild(copy);
-    card.appendChild(acts);
-  } else if (rec.type === TYPE_IMAGE) {
-    const img = document.createElement('img');
-    img.className = 'preview';
-    img.src = url;
-    card.appendChild(img);
-    const acts = document.createElement('div');
-    acts.className = 'acts';
-    const dl = document.createElement('a');
-    dl.className = 'btn';
-    dl.href = url;
-    dl.download = rec.name;
-    dl.textContent = t('saveImage');
-    acts.appendChild(dl);
-    card.appendChild(acts);
-  } else {
-    const acts = document.createElement('div');
-    acts.className = 'acts';
-    const dl = document.createElement('a');
-    dl.className = 'btn primary';
-    dl.href = url;
-    dl.download = rec.name;
-    dl.textContent = t('saveFile');
-    acts.appendChild(dl);
-    card.appendChild(acts);
-  }
-  resultEl.appendChild(card);
-}
-
-/* ---------- IndexedDB v2：历史记录 + 分段续传 ---------- */
-let db = null;
-function openDB() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open('ctxfer', 2);
-    r.onupgradeneeded = (e) => {
-      const d = e.target.result;
-      if (!d.objectStoreNames.contains('items')) {
-        d.createObjectStore('items', { keyPath: 'id', autoIncrement: true });
-      }
-      if (!d.objectStoreNames.contains('transfers')) {
-        d.createObjectStore('transfers', { keyPath: 'name' });
-      }
-    };
-    r.onsuccess = (e) => res(e.target.result);
-    r.onerror = (e) => rej(e.target.error);
-  });
-}
-async function getTransfer(name) {
-  if (!db) db = await openDB();
-  return new Promise((res, rej) => {
-    const r = db.transaction('transfers', 'readonly').objectStore('transfers').get(name);
-    r.onsuccess = () => res(r.result || null);
-    r.onerror = () => rej(r.error);
-  });
-}
-async function putTransfer(rec) {
-  if (!db) db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction('transfers', 'readwrite');
-    tx.objectStore('transfers').put(rec);
-    tx.oncomplete = () => res();
-    tx.onerror = () => rej(tx.error);
-  });
-}
-async function deleteTransfer(name) {
-  if (!db) db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction('transfers', 'readwrite');
-    tx.objectStore('transfers').delete(name);
-    tx.oncomplete = () => res();
-    tx.onerror = () => rej(tx.error);
-  });
-}
-async function listTransfers() {
-  if (!db) db = await openDB();
-  return new Promise((res, rej) => {
-    const r = db.transaction('transfers', 'readonly').objectStore('transfers').getAll();
-    r.onsuccess = () => res(r.result || []);
-    r.onerror = () => rej(r.error);
-  });
-}
-async function refreshActiveTransfers() {
+<script>
+/* ---------- 官方 Cimbar 引擎初始化（cimbar_js.wasm：编解码 + fountain + zstd 一体） ----------
+   Module 必须定义在全局作用域，官方 loader 会复用并绑定 cimbard_* API。 */
+var Module = {};
+window.__CimbarModule = Module;
+Module.onRuntimeInitialized = function () {
   try {
-    if (!db) db = await openDB();
-    const list = await listTransfers();
-    const wrap = document.getElementById('activeTransfers');
-    const ul = document.getElementById('activeList');
-    if (!list || !list.length) { if (wrap) wrap.hidden = true; return; }
-    if (wrap) wrap.hidden = false;
-    ul.innerHTML = '';
-    for (const tr of list) {
-      const got = Object.keys(tr.chunks || {}).length;
-      const li = document.createElement('li');
-      const n = document.createElement('span');
-      n.className = 'h-name';
-      n.textContent = tr.name;
-      const m = document.createElement('span');
-      m.className = 'h-meta';
-      m.textContent = t('segProgress', { got, total: tr.total });
-      li.appendChild(n);
-      li.appendChild(m);
-      const bar = document.createElement('div');
-      bar.className = 'minibar';
-      const fill = document.createElement('div');
-      fill.className = 'minibar-fill';
-      fill.style.width = Math.round(got / Math.max(1, tr.total) * 100) + '%';
-      bar.appendChild(fill);
-      li.appendChild(bar);
-      ul.appendChild(li);
-    }
-  } catch (e) { console.warn('active transfers list failed:', e); }
-}
-async function saveToDB(rec) {
-  try {
-    if (!db) db = await openDB();
-    const tx = db.transaction('items', 'readwrite');
-    tx.objectStore('items').add({ name: rec.name, type: rec.type, size: rec.size, time: Date.now(), blob: rec.blob });
-  } catch (e) { console.warn('IndexedDB 保存失败（可能处于隐私模式）:', e); }
-  refreshList();
-}
-async function refreshList() {
-  try {
-    if (!db) db = await openDB();
-    const all = await new Promise((res, rej) => {
-      const r = db.transaction('items', 'readonly').objectStore('items').getAll();
-      r.onsuccess = () => res(r.result || []);
-      r.onerror = () => rej(r.error);
-    });
-    historyList.innerHTML = '';
-    const sorted = all.slice().sort((a, b) => (b.time || 0) - (a.time || 0));
-    for (const it of sorted) {
-      const li = document.createElement('li');
-      const n = document.createElement('span');
-      n.className = 'h-name';
-      n.textContent = it.name;
-      const m = document.createElement('span');
-      m.className = 'h-meta';
-      m.textContent = typeLabel(it.type) + ' · ' + fmtSize(it.size) + ' · ' + fmtTime(it.time);
-      const dl = document.createElement('a');
-      dl.className = 'btn';
-      dl.href = URL.createObjectURL(it.blob);
-      dl.download = it.name;
-      dl.textContent = t('download');
-      const del = document.createElement('button');
-      del.textContent = t('delete');
-      del.addEventListener('click', () => {
-        const tx = db.transaction('items', 'readwrite');
-        tx.objectStore('items').delete(it.id);
-        refreshList();
-      });
-      li.appendChild(n); li.appendChild(m); li.appendChild(dl); li.appendChild(del);
-      historyList.appendChild(li);
-    }
-  } catch (e) { console.warn('读取历史失败:', e); }
-}
-
-/* ---------- 主线程解码器（不依赖 Worker：wasm 在主线程直接解码） ----------
-   完整复刻官方解码链：_decodeImage 产出模板分片 → 写入 /temp → _write_frame_data 喂给汇流器
-   → _get_common_progress 轮询 → 进度归零时从 /out 读出完整数据流（含 CTXF 头）。 */
-function createMTDecoder(C) {
-  const numBytes = 32;
-  const templatePtah = '/temp';
-  const templateDir = '/template_data/';
-  const outputDir = '/out/';
-  function mk(p) { try { C.FS.mkdir(p); } catch (e) {} }
-  mk(templateDir); mk(outputDir);
-  // 注意：/temp 是文件（官方 worker 里 FS.writeFile('/temp', data) 直接覆盖写），不是目录
-  function createPathHeap(p) {
-    const ptr = C._malloc(numBytes);
-    const bytes = new Uint8Array(C.HEAPU8.buffer, ptr, numBytes);
-    bytes.fill(0);
-    for (let k = 0; k < p.length; k++) bytes[k] = p.charCodeAt(k);
-    return ptr;
-  }
-  const templateHeap = createPathHeap(templatePtah);
-  const outputHeap = createPathHeap(outputDir);
-  // init_sink 偶发返回 -1（wasm 参数校验偶发判定为 null）。用裸指针并校验返回值，失败则换参数序重试。
-  let sinkReady = false;
-  const sinkRetry = [
-    () => C._init_sink(outputHeap, numBytes),
-    () => C._init_sink(outputHeap),
-    () => C._init_sink(numBytes, outputHeap),
-  ];
-  for (let i = 0; i < sinkRetry.length && !sinkReady; i++) {
-    try {
-      const r = sinkRetry[i]();
-      if (r === 1) sinkReady = true;
-    } catch (e) { /* 继续尝试 */ }
-  }
-  if (!sinkReady) {
-    try { C._init_sink(outputHeap, numBytes); } catch (e) {}
-  }
-  let onData = null, onDecodeError = null;
-  let everGotData = false;   // 是否收到过有效块（区分"未开始 0%"与"完成 100%"）
-  const api = {
-    setCallbacks(cb) { onData = cb.onData || null; onDecodeError = cb.onDecodeError || null; },
-    lastErr: 0, lastTpls: 0,
-    getProgress() {
-      const p = C._get_common_progress();
-      // rawProgress=0 可能是"完成"也可能是"从未收到任何块"；
-      // 只有收到过有效块后才算 100%，否则显示 0%（避免"进度100%但没结果"的误导）。
-      if (p === 0) return everGotData ? 1 : 0;
-      return p;
-    },
-    rawProgress() { return C._get_common_progress(); },
-    outEntries() { try { return C.FS.readdir(outputDir); } catch (e) { return ['ERR ' + e.message]; } },
-    // 调试对照：与 decodeFrame 同参数的"直调"，不吞错，返回各步状态
-    decodeDirect(imgData) {
-      const data = imgData.data;
-      const Q = C._malloc(data.length);
-      const Z = new Uint8Array(C.HEAPU8.buffer, Q, data.length);
-      for (let i = 0; i < data.length; i += 4) {
-        Z[i] = data[i + 2]; Z[i + 1] = data[i + 1]; Z[i + 2] = data[i]; Z[i + 3] = data[i + 3];
-      }
-      const err = C._decodeImage(Q, imgData.width, imgData.height, outputHeap, numBytes);
-      C._free(Q);
-      let tpls = [];
-      try {
-        const names = C.FS.readdir(templateDir);
-        for (let i = 0; i < names.length; i++) {
-          const n = names[i];
-          if (n !== '.' && n !== '..') tpls.push(C.FS.readFile(templateDir + n).length);
-        }
-      } catch (e) { return { err, tpls: 'FS-ERR ' + e.message, progress: -1 }; }
-      if (tpls.length) {
-        const names = C.FS.readdir(templateDir);
-        for (let i = 0; i < names.length; i++) {
-          const n = names[i];
-          if (n !== '.' && n !== '..') {
-            const t = C.FS.readFile(templateDir + n);
-            C.FS.writeFile(templatePtah, t);
-            C._write_frame_data(templateHeap);
-          }
-        }
-        everGotData = true;
-      }
-      const p = C._get_common_progress();
-      return { err: err, tpls: tpls, progress: p };
-    },
-    decodeFrame(imgData) {
-      const data = imgData.data;
-      const Q = C._malloc(data.length);
-      const Z = new Uint8Array(C.HEAPU8.buffer, Q, data.length);
-      // 与官方 worker 相同：RGBA → BGRA（wasm 期望 BGR 通道序）
-      for (let i = 0; i < data.length; i += 4) {
-        Z[i] = data[i + 2];
-        Z[i + 1] = data[i + 1];
-        Z[i + 2] = data[i];
-        Z[i + 3] = data[i + 3];
-      }
-      let err = 0;
-      try { err = C._decodeImage(Q, imgData.width, imgData.height, outputHeap, numBytes); }
-      catch (e) { C._free(Q); if (onDecodeError) onDecodeError(-1); return; }
-      C._free(Q);
-      api.lastErr = err;
-      // 重要：err≠0 不代表帧无效。实测 qt-works 解码器对"识别成功但
-      // 无新块/帧重复"也返回非 0 错误码，此时模板目录可能仍有有效输出；
-      // 直接丢弃会永远收不到数据。因此一律先读取模板目录，有输出才写入。
-      let files = [];
-      const names = C.FS.readdir(templateDir);
-      for (let i = 0; i < names.length; i++) {
-        const n = names[i];
-        if (n !== '.' && n !== '..') files.push(C.FS.readFile(templateDir + n));
-      }
-      api.lastTpls = files.length;
-      for (let i = 0; i < names.length; i++) {
-        const n = names[i];
-        if (n !== '.' && n !== '..') { try { C.FS.unlink(templateDir + n); } catch (e) {} }
-      }
-      if (!files.length) {
-        // 模板目录为空且解码返回错误，才视为帧无效
-        if (err !== 0) { if (onDecodeError) onDecodeError(err); }
-        return;
-      }
-      for (let i = 0; i < files.length; i++) {
-        C.FS.writeFile(templatePtah, files[i]);
-        C._write_frame_data(templateHeap);
-      }
-      everGotData = true;   // 收到过有效块：进度归零才可判为"完成 100%"
-      const p = C._get_common_progress();
-      if (p === 0) {
-        const entries = C.FS.readdir(outputDir);
-        if (entries.length === 3) {
-          const outName = entries[2];
-          const out = C.FS.readFile(outputDir + '/' + outName);
-          try { C.FS.unlink(outputDir + '/' + outName); } catch (e) {}
-          if (onData) onData(out);
-        }
-      }
-    }
-  };
-  return api;
-}
-
-/* 传输完成后重建解码器：官方 worker 每次传输用独立实例，
-   同一 wasm sink 在完成一次传输后不接受新流（实测确认）。 */
-function bindDecoder(d) {
-  d.setCallbacks({
-    onData: (data) => handleSuccess(data),
-    onDecodeError: (code) => {
-      // 扫码中"帧无法识别/无新块"高频出现（画面不稳、非帧时刻、重复帧），
-      // 逐帧弹错只会刷屏干扰。这里不再 showErr；仅当从未收到任何块时才
-      // 维持"未对齐"提示，收到块后保持对齐状态不再闪烁。
-      const pr = decoder.getProgress();
-      if (pr <= 0) setAlign('alignBad', false);
-    },
-  });
-}
-function rebuildDecoder() {
-  try {
-    const fs = Cimbar.FS;
-    const clean = (dir) => {
-      let list = [];
-      try { list = fs.readdir(dir); } catch (e) { return; }
-      for (const n of list) {
-        if (n !== '.' && n !== '..') { try { fs.unlink(dir + '/' + n); } catch (e) {} }
-      }
-    };
-    clean('/out/');
-    clean('/template_data/');
-    try { fs.unlink('/temp'); } catch (e) {}
-  } catch (e) {}
-  decoder = createMTDecoder(Cimbar);
-  bindDecoder(decoder);
-}
-
-/* 容错率：调用 wasm configure 切换 ECC（解码 chunkSize 跟随），
-   必须与发送端一致；0 = 引擎默认（configure 传 150 触发默认约 16B ECC）。
-   切换后重建解码器使新参数生效。 */
-window.setECC = (v) => {
-  v = parseInt(v, 10) || 0;
-  try {
-    if (Cimbar._configure) Cimbar._configure(2, (v > 0 ? v : 150), -1, 0);
-  } catch (e) {}
-  try {
-    const sel = document.getElementById('ecc-sel');
-    if (sel) sel.value = String(v);
-  } catch (e) {}
-  if (decoder) { try { decoder.destroy && decoder.destroy(); } catch (e) {} }
-  rebuildDecoder();
-  setMeta('eccNote');
-};
-
-/* ---------- 解码器初始化（主线程，无需 Worker） ---------- */
-Cimbar.onRuntimeInitialized = () => {
-  try {
-    decoder = createMTDecoder(Cimbar);
-    bindDecoder(decoder);
+    // 固定 4C 模式（发送端固定 4C）
+    Module._cimbard_configure_decode(4);
+    // 分配 fountain 缓冲
+    var size = Module._cimbard_get_bufsize();
+    window.__fountainBuf = new Uint8Array(Module.HEAPU8.buffer, Module._malloc(size), size);
+    window.__engineReady = true;
     btnScan.disabled = false;
     setMeta('readyMeta');
   } catch (e) {
-    showErr(t('initFail') + ': ' + e);
+    showErr(t('initFail') + ': ' + (e && e.message ? e.message : e));
   }
 };
-initCimbar(Cimbar, absUrl('./index.wasm'));
-setTimeout(() => {
-  if (!decoder) {
-    showErr(t('initTimeout'));
-    btnScan.disabled = true;
-  }
-}, 25000);
+</script>
+<script src="cimbar_js.2026-01-20T0312.js"></script>
 
-/* ---------- 扫描控制 ---------- */
-function setScanState(on) {
-  scanning = on;
-  btnScan.disabled = on || !decoder;
-  btnStop.disabled = !on;
-  btnScan.textContent = on ? t('btnScanning') : (resultEl.children.length ? t('btnScanAgain') : t('btnScan'));
-}
-function scanLoop(ts) {
-  if (!scanning) return;
-  scanRaf = requestAnimationFrame(scanLoop);
-  if (!decoder || !video.videoWidth) return;
-  const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
-  // 整图解码：实测 qt-works 解码器对"QR 占画面一部分"的帧也能自适应定位解码，
-  // 中心裁剪放大反而引入模糊导致失败（模拟真机 1280x720 画面 QR 居中可解）。
-  // 远距离/反光时请用户把 QR 调大并居中（发送端已支持拖动/缩放）。
-  const vw = video.videoWidth, vh = video.videoHeight;
-  if (scanCanvas.width !== vw) scanCanvas.width = vw;
-  if (scanCanvas.height !== vh) scanCanvas.height = vh;
-  if (ts - lastDecodeAt > 45) {   // 约 20fps 解码节流，避免低端机满载
-    lastDecodeAt = ts;
+<script>
+(function () {
+  const t = window.__t;
+
+  const video = document.getElementById('video');
+  const btnScan = document.getElementById('btnScan');
+  const btnStop = document.getElementById('btnStop');
+  const alignEl = document.getElementById('align');
+  const progressBar = document.getElementById('progressBar');
+  const metaEl = document.getElementById('meta');
+  const errEl = document.getElementById('err');
+  const resultEl = document.getElementById('result');
+  const historyList = document.getElementById('historyList');
+
+  let scanning = false;
+  let streamRef = null;
+  let lastReport = [];          // 官方进度报告（JSON 数组，元素=文件完成比例）
+  let everGotData = false;
+  let noDataSince = 0, noDataShown = false;   // 无进展提示计时
+  let lastRec = null;           // 最近一次接收结果（语言切换时重绘）
+  let metaKey = null, metaVars = null;
+  let alignKey = null, alignOk = null;
+  let lastDecodeAt = 0;
+
+  function showErr(msg) { errEl.style.display = 'block'; errEl.textContent = msg; }
+  function hideErr() { errEl.style.display = 'none'; }
+  function setMeta(key, vars) { metaKey = key; metaVars = vars || null; metaEl.textContent = t(key, vars); }
+  function setAlign(key, ok) { alignKey = key; alignOk = ok || null; alignEl.className = ok ? 'ok' : (ok === false ? 'bad' : ''); alignEl.textContent = t(key); }
+  function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1024).toFixed(1) + ' KB'; }
+  function safeName(n) {
+    return String(n || 'received').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 200) || 'received';
+  }
+
+  /* ---------- 官方解码 API 封装 ---------- */
+  function getReport() {
     try {
-      ctx.drawImage(video, 0, 0, vw, vh);
-      decoder.decodeFrame(ctx.getImageData(0, 0, vw, vh));
-      const pr = decoder.getProgress();
-      progressBar.style.width = Math.round(pr * 100) + '%';
-      if (pr > 0) {
-        setAlign('alignOk', true);
-        noDataSince = 0;
-      } else if (noDataSince && Date.now() - noDataSince > 6000 && !noDataShown) {
-        // 6 秒无任何进展：提示用户去发送端调整（单向沟通变通协议）
+      var errPtr = Module._malloc(2048);
+      var elen = Module._cimbard_get_report(errPtr, 2048);
+      if (elen > 0) {
+        var view = new Uint8Array(Module.HEAPU8.buffer, errPtr, elen);
+        var text = new TextDecoder().decode(view);
+        Module._free(errPtr);
+        try { return JSON.parse(text); } catch (e) { return text; }
+      }
+      Module._free(errPtr);
+    } catch (e) {}
+    return null;
+  }
+
+  /* 单帧解码：pixels(RGBA/NV12/I420) → 新块（null = 无新数据） */
+  function decodePixels(pixels, format, width, height) {
+    if (!window.__engineReady || !window.__fountainBuf) return null;
+    var dataPtr = Module._malloc(pixels.length);
+    Module.HEAPU8.set(pixels, dataPtr);
+    var type = 4;
+    if (format === 'NV12') type = 12;
+    else if (format === 'I420') type = 420;
+    var len = Module._cimbard_scan_extract_decode(dataPtr, width, height, type, window.__fountainBuf.byteOffset, window.__fountainBuf.length);
+    Module._free(dataPtr);
+    if (len <= 0) {
+      var rep = getReport();
+      if (rep && typeof rep === 'string' && rep.indexOf('imgdec:') >= 0) {
+        // 扫描成功但无块：无进展（不弹错）
+      }
+      return null;
+    }
+    return new Uint8Array(Module.HEAPU8.buffer, window.__fountainBuf.byteOffset, len).slice();
+  }
+
+  /* Sink：聚合块 → 进度 → 完成重组 */
+  function sink(buff) {
+    if (!buff || buff.length === 0) return;
+    var res = Module._cimbard_fountain_decode(buff.byteOffset, buff.length);
+    var report = getReport();
+    if (Array.isArray(report) && report.length > 0) {
+      everGotData = true;
+      noDataSince = 0;
+      noDataShown = false;
+      var p = Math.round(report[report.length - 1] * 100);
+      progressBar.style.width = p + '%';
+      setMeta('progressMeta', { p: p });
+      lastReport = report;
+    } else if (report && typeof report === 'string' && res > 0) {
+      // 完成（report 可能是非 JSON 字符串）
+    }
+    if (res > 0) {
+      var id = Number(BigInt.asUintN(32, BigInt(res)));
+      reassembleFile(id);
+    }
+  }
+
+  /* 完成：读文件名/大小 → 解压流 → Blob → 展示 */
+  function reassembleFile(id) {
+    try {
+      var size = Number(Module._cimbard_get_filesize(id));
+      var errPtr = Module._malloc(2048);
+      var fnsize = Module._cimbard_get_filename(id, errPtr, 2048);
+      var name = 'received-' + id + '-' + size;
+      if (fnsize > 0) {
+        name = new TextDecoder('utf-8').decode(new Uint8Array(Module.HEAPU8.buffer, errPtr, fnsize));
+      }
+      Module._free(errPtr);
+
+      // 流式解压
+      var bufSize = Module._cimbard_get_decompress_bufsize();
+      var rptr = Module._malloc(bufSize);
+      var chunks = [];
+      for (;;) {
+        var n = Module._cimbard_decompress_read(id, rptr, bufSize);
+        if (n <= 0) break;
+        chunks.push(new Uint8Array(Module.HEAPU8.buffer, rptr, n).slice());
+      }
+      Module._free(rptr);
+      var blob = new Blob(chunks);
+      finishTransfer(name, size, blob);
+    } catch (e) {
+      showErr('reassemble failed: ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  /* 完成展示：文本内联 + 图片预览 + 文件下载 */
+  function finishTransfer(name, origSize, blob) {
+    var lower = String(name).toLowerCase();
+    var rec = { name: safeName(name), size: origSize, blob: blob, time: Date.now() };
+
+    // 文本
+    if (/(\.txt$|\.text$|\.md$|\.log$|\.json$|\.csv$|\.xml$|\.js$|\.py$|\.html$|\.css$)/.test(lower) || blob.size < 1024 * 1024) {
+      blob.arrayBuffer().then(function (ab) {
+        try {
+          var text = new TextDecoder('utf-8').decode(ab);
+          if (text.indexOf('\uFFFD') < 0) {
+            rec.type = 1;
+            rec.text = text;
+            rec.kind = 'text';
+          } else {
+            rec.type = 0; rec.kind = 'file';
+          }
+        } catch (e) { rec.type = 0; rec.kind = 'file'; }
+        renderRec(rec);
+        saveHistory(rec);
+      });
+      return;
+    }
+    // 图片
+    if (/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/.test(lower)) {
+      rec.type = 2; rec.kind = 'image';
+      rec.dataUrl = URL.createObjectURL(blob);
+      renderRec(rec);
+      saveHistory(rec);
+      return;
+    }
+    // 文件
+    rec.type = 0; rec.kind = 'file';
+    rec.dataUrl = URL.createObjectURL(blob);
+    renderRec(rec);
+    saveHistory(rec);
+  }
+
+  function typeLabel(rec) {
+    if (rec.type === 1) return t('typeText');
+    if (rec.type === 2) return t('typeImage');
+    return t('typeFile');
+  }
+
+  function renderRec(rec) {
+    lastRec = rec;
+    var card = document.createElement('div');
+    card.className = 'card';
+    var html = '<div class="type">' + typeLabel(rec) + '</div>';
+    html += '<div class="name">' + escapeHtml(rec.name) + '</div>';
+    html += '<div class="size">' + fmtSize(rec.size || rec.blob.size) + '</div>';
+    if (rec.kind === 'image' && rec.dataUrl) {
+      html += '<img class="preview" src="' + rec.dataUrl + '">';
+    } else if (rec.kind === 'text' && rec.text !== undefined) {
+      html += '<pre>' + escapeHtml(rec.text.length > 4000 ? rec.text.slice(0, 4000) + '…' : rec.text) + '</pre>';
+    }
+    html += '<div class="acts">';
+    if (rec.kind === 'text' && rec.text !== undefined) {
+      html += '<button data-act="copy">' + t('copyText') + '</button>';
+    }
+    html += '<button data-act="save">' + (rec.kind === 'image' ? t('saveImage') : t('saveFile')) + '</button>';
+    html += '</div>';
+    card.innerHTML = html;
+    card.querySelector('[data-act="copy"]')?.addEventListener('click', function () {
+      try {
+        navigator.clipboard.writeText(rec.text).then(function () {
+          card.querySelector('[data-act="copy"]').textContent = t('copied');
+        }, function () { card.querySelector('[data-act="copy"]').textContent = t('copyFail'); });
+      } catch (e) { card.querySelector('[data-act="copy"]').textContent = t('copyFail'); }
+    });
+    card.querySelector('[data-act="save"]')?.addEventListener('click', function () {
+      var a = document.createElement('a');
+      a.href = rec.dataUrl || URL.createObjectURL(rec.blob);
+      a.download = rec.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+    resultEl.prepend(card);
+    // 完成后自动停止扫描，避免继续接收旧数据
+    stopScan();
+    btnScan.textContent = t('btnScanAgain');
+    btnScan.disabled = false;
+    btnStop.disabled = true;
+    setMeta('recvDone', { name: rec.name, size: fmtSize(rec.size || rec.blob.size) });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /* ---------- 历史记录（IndexedDB，刷新不丢） ---------- */
+  let db = null;
+  function openDB() {
+    return new Promise(function (resolve) {
+      if (db) { resolve(db); return; }
+      try {
+        var req = indexedDB.open('cimbar-recv', 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore('history', { keyPath: 'time' }); };
+        req.onsuccess = function () { db = req.result; resolve(db); };
+        req.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  }
+  function saveHistory(rec) {
+    openDB().then(function (d) {
+      if (!d) return;
+      try {
+        d.transaction('history', 'readwrite').objectStore('history').put({
+          time: rec.time, name: rec.name, size: rec.size || rec.blob.size,
+          type: rec.type, dataUrl: rec.dataUrl || null
+        });
+      } catch (e) {}
+    });
+  }
+  function loadHistory() {
+    openDB().then(function (d) {
+      if (!d) return;
+      try {
+        var req = d.transaction('history').objectStore('history').getAll();
+        req.onsuccess = function () {
+          historyList.innerHTML = '';
+          (req.result || []).sort(function (a, b) { return b.time - a.time; }).slice(0, 20).forEach(function (r) {
+            var li = document.createElement('li');
+            li.innerHTML = '<span class="h-name">' + escapeHtml(r.name) + '</span><span class="h-meta">' + fmtSize(r.size) + '</span>';
+            historyList.appendChild(li);
+          });
+        };
+      } catch (e) {}
+    });
+  }
+
+  /* ---------- 摄像头与帧捕获（官方约束：优先 VideoFrame，兜底 canvas） ---------- */
+  function startScan() {
+    if (scanning) return;
+    if (!window.__engineReady) { showErr(t('initTimeout')); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showErr(t('camErr', { msg: 'getUserMedia unavailable (HTTPS / localhost required)' }));
+      return;
+    }
+    var constraints = {
+      audio: false,
+      video: {
+        width: { min: 720, ideal: 1920 },
+        height: { min: 720, ideal: 1080 },
+        aspectRatio: matchMedia('all and (orientation:landscape)').matches ? 16 / 9 : 9 / 16,
+        facingMode: 'environment',
+        exposureMode: 'continuous',
+        focusMode: 'continuous',
+        frameRate: { ideal: 15 }
+      }
+    };
+    navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+      streamRef = stream;
+      scanning = true;
+      video.srcObject = stream;
+      btnScan.disabled = true;
+      btnStop.disabled = false;
+      setAlign('alignIdle', null);
+      setMeta('camOnMeta', { w: video.videoWidth || '?', h: video.videoHeight || '?' });
+      hideErr();
+      progressBar.style.width = '0%';
+      lastReport = [];
+      everGotData = false;
+      noDataSince = 0; noDataShown = false;
+      video.play().catch(function () {});
+      // 官方架构：requestVideoFrameCallback（真机手机支持良好；iOS 15+ 支持）
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(onVideoFrame);
+      } else {
+        requestAnimationFrame(scanLoop);
+      }
+    }).catch(function (err) {
+      showErr(t('camErr', { msg: err && err.message ? err.message : err }));
+    });
+  }
+
+  function stopScan() {
+    scanning = false;
+    if (streamRef) {
+      try { streamRef.getTracks().forEach(function (tr) { tr.stop(); }); } catch (e) {}
+      streamRef = null;
+    }
+    video.srcObject = null;
+    btnStop.disabled = true;
+    btnScan.disabled = false;
+    btnScan.textContent = t('btnScan');
+    setAlign('alignIdle', null);
+    setMeta('metaIdle');
+  }
+
+  /* VideoFrame 路径（官方）：每次新帧 → copyTo RGBA/NV12 → 解码 */
+  let frameBusy = false;
+  function onVideoFrame(now, metadata) {
+    if (!scanning) return;
+    if (frameBusy) { try { video.requestVideoFrameCallback(onVideoFrame); } catch (e) {} return; }
+    frameBusy = true;
+    try {
+      var vf = new VideoFrame(video, { timestamp: now });
+      var w = vf.displayWidth;
+      var h = vf.displayHeight;
+      var fmt = vf.format;
+      var params = {};
+      if (fmt !== 'NV12' && fmt !== 'I420' && fmt !== 'RGBA') {
+        params.format = 'RGBA';
+      }
+      var size = vf.allocationSize(params);
+      var buff = new Uint8Array(size);
+      vf.copyTo(buff, params);
+      vf.close();
+      var format = params.format || fmt;
+      var bytes = decodePixels(buff, format, w, h);
+      if (bytes) sink(bytes);
+      // 无进展提示（6 秒无新数据）
+      noDataSince++;
+      if (noDataSince > 60 && !noDataShown) {  // ~6 秒（15fps）
         noDataShown = true;
         setMeta('noProgressHint');
       }
-      setMeta('progressMeta', { p: Math.round(pr * 100) });
-    } catch (e) { /* 单帧失败忽略 */ }
-  }
-}
-async function startScan() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    showErr(t('camErr', { msg: 'getUserMedia unavailable (HTTPS / localhost required)' }));
-    setScanState(false);
-    return;
-  }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
-    });
-    streamRef = stream;
-    video.srcObject = stream;
-    await new Promise((res, rej) => {
-      video.onloadedmetadata = res;
-      video.onerror = rej;
-    });
-    video.play();
-    setMeta('camOnMeta', { w: video.videoWidth, h: video.videoHeight });
-    lastDecodeAt = 0;
-    noDataSince = Date.now();
-    noDataShown = false;
-    scanRaf = requestAnimationFrame(scanLoop);
-  } catch (e) {
-    showErr(t('camErr', { msg: (e && e.message ? e.message : e) }));
-    setScanState(false);
-  }
-}
-function stopScan() {
-  cancelAnimationFrame(scanRaf);
-  if (streamRef) { try { streamRef.getTracks().forEach((tr) => tr.stop()); } catch (e) {} streamRef = null; }
-  video.srcObject = null;
-}
-btnScan.addEventListener('click', () => {
-  if (!decoder || scanning) return;
-  hideErr();
-  progressBar.style.width = '0%';
-  resultEl.innerHTML = '';
-  lastRec = null;
-  startScan();
-  setScanState(true);
-});
-btnStop.addEventListener('click', () => {
-  stopScan();
-  setScanState(false);
-  setMeta('stopped');
-});
-
-/* 历史记录抽屉开关 */
-const drawerEl = document.getElementById('drawer');
-const btnHistoryEl = document.getElementById('btnHistory');
-const btnDrawerCloseEl = document.getElementById('btnDrawerClose');
-if (btnHistoryEl) {
-  btnHistoryEl.addEventListener('click', () => {
-    drawerEl.classList.add('open');
-  });
-}
-if (btnDrawerCloseEl) {
-  btnDrawerCloseEl.addEventListener('click', () => {
-    drawerEl.classList.remove('open');
-  });
-}
-
-/* ---------- 静态图片解码（测试/截图接收） ---------- */
-document.getElementById('imgFile').addEventListener('change', (e) => {
-  const f = e.target.files && e.target.files[0];
-  if (!f || !decoder) return;
-  hideErr();
-  resultEl.innerHTML = '';
-  lastRec = null;
-  setMeta('imgDecoding');
-  const url = URL.createObjectURL(f);
-  const img = new Image();
-  img.onload = () => {
-    try {
-      scanCanvas.width = img.naturalWidth;
-      scanCanvas.height = img.naturalHeight;
-      const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0);
-      decoder.decodeFrame(ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height));
-      setMeta('imgDecoded');
-    } catch (err) {
-      showErr(t('imgDecodeFail') + ': ' + (err && err.message ? err.message : err));
-    } finally {
-      URL.revokeObjectURL(url);
+    } catch (e) {
+      // VideoFrame 不可用或失败 → 降级 canvas
+      try {
+        var c = document.getElementById('scan');
+        c.width = video.videoWidth || 640;
+        c.height = video.videoHeight || 480;
+        var ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(video, 0, 0, c.width, c.height);
+        var id = ctx.getImageData(0, 0, c.width, c.height);
+        var bytes2 = decodePixels(new Uint8Array(id.data.buffer), 'RGBA', c.width, c.height);
+        if (bytes2) sink(bytes2);
+      } catch (e2) {}
     }
+    frameBusy = false;
+    try { video.requestVideoFrameCallback(onVideoFrame); } catch (e) {}
+  }
+
+  /* canvas 兜底路径（无 requestVideoFrameCallback 时） */
+  function scanLoop(ts) {
+    if (!scanning) return;
+    if (ts - lastDecodeAt > 100) {
+      lastDecodeAt = ts;
+      var c = document.getElementById('scan');
+      c.width = video.videoWidth || 640;
+      c.height = video.videoHeight || 480;
+      var ctx = c.getContext('2d', { willReadFrequently: true });
+      try {
+        ctx.drawImage(video, 0, 0, c.width, c.height);
+        var id = ctx.getImageData(0, 0, c.width, c.height);
+        var bytes = decodePixels(new Uint8Array(id.data.buffer), 'RGBA', c.width, c.height);
+        if (bytes) sink(bytes);
+      } catch (e) {}
+    }
+    requestAnimationFrame(scanLoop);
+  }
+
+  /* ---------- 静态图测试路径（Decode Image） ---------- */
+  document.getElementById('imgFile').addEventListener('change', function (ev) {
+    var file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    setMeta('imgDecoding');
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var img = new Image();
+      img.onload = function () {
+        var c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        var ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        var id = ctx.getImageData(0, 0, c.width, c.height);
+        var bytes = decodePixels(new Uint8Array(id.data.buffer), 'RGBA', c.width, c.height);
+        if (bytes) {
+          sink(bytes);
+          // 静态图只给一次机会 → 重新配置解码器以便后续继续接收
+          setTimeout(function () {
+            try { Module._cimbard_configure_decode(4); } catch (e) {}
+          }, 100);
+        }
+        setMeta('imgDecoded');
+      };
+      img.onerror = function () { setMeta('imgDecodeFail'); };
+      img.src = URL.createObjectURL(file);
+    };
+    reader.readAsArrayBuffer(file);
+    ev.target.value = '';
+  });
+
+  /* ---------- 事件绑定 ---------- */
+  btnScan.addEventListener('click', function () {
+    if (window.__engineReady) startScan();
+    else showErr(t('initTimeout'));
+  });
+  btnStop.addEventListener('click', stopScan);
+
+  document.getElementById('btnHistory').addEventListener('click', function () {
+    document.getElementById('drawer').classList.add('open');
+    loadHistory();
+  });
+  document.getElementById('btnDrawerClose').addEventListener('click', function () {
+    document.getElementById('drawer').classList.remove('open');
+  });
+
+  window.addEventListener('resize', function () {});
+
+  /* 语言切换时重绘最近结果 */
+  window.__onLangChange = function () {
+    if (metaKey) setMeta(metaKey, metaVars);
+    if (alignKey) setAlign(alignKey, alignOk);
+    if (lastRec) {
+      resultEl.innerHTML = '';
+      renderRec(lastRec);
+    }
+    loadHistory();
   };
-  img.onerror = () => { showErr(t('imgDecodeFail') + ': load error'); URL.revokeObjectURL(url); };
-  img.src = url;
-  e.target.value = '';
-});
 
-/* ---------- 语言切换时刷新动态文本 ---------- */
-window.__onLangChange = () => {
-  if (alignKey) setAlign(alignKey, alignOk);
-  if (metaKey) setMeta(metaKey, metaVars);
-  btnScan.textContent = scanning ? t('btnScanning') : (resultEl.children.length ? t('btnScanAgain') : t('btnScan'));
-  if (lastRec) renderResult(lastRec);
-  refreshList();
-  refreshActiveTransfers();
-};
-
-/* ---------- 初始状态 ---------- */
-setMeta('metaIdle');
-setAlign('alignIdle', null);
-if (typeof window.__onLangChange === 'function') window.__onLangChange();
-
-/* ---------- PWA ---------- */
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
-}
-refreshList();
-refreshActiveTransfers();
-
-/* 调试/测试句柄（无副作用，便于控制台验证协议与续传） */
-window.__recv = {
-  parseTransfer, handleSuccess, getTransfer, listTransfers, refreshActiveTransfers,
-  isReady: () => !!decoder,
-  getProgress: () => (decoder ? decoder.getProgress() : 0),
-  rawProgress: () => (decoder ? decoder.rawProgress() : -1),
-  outEntries: () => (decoder ? decoder.outEntries() : []),
-  lastErr: () => (decoder ? decoder.lastErr : -1),
-  lastTpls: () => (decoder ? decoder.lastTpls : -1),
-  decodeDirect: (imgData) => { if (decoder) return decoder.decodeDirect(imgData); return null; },
-  decodeStatic: (imgData) => { if (decoder) decoder.decodeFrame(imgData); },
-};
+  /* 测试/桥接 */
+  window.__recv = {
+    parseTransfer: function (u8) { return { name: 'official', size: u8.length }; },
+    handleSuccess: function (name, size, blob) { finishTransfer(name, size, blob); },
+    getProgress: function () {
+      var p = 0;
+      if (lastReport.length > 0) p = Math.round(lastReport[lastReport.length - 1] * 100);
+      return p;
+    },
+    rawProgress: function () { return lastReport; },
+    lastErr: function () { return null; },
+    outEntries: function () { return resultEl.querySelectorAll('.card').length; },
+    decodeDirect: function (imgData, w, h) {
+      var bytes = decodePixels(new Uint8Array(imgData.data ? imgData.data.buffer : imgData), 'RGBA', w, h);
+      return bytes ? bytes.length : 0;
+    },
+    decodeStatic: function (imgData, w, h) {
+      var before = window.__engineReady;
+      try { Module._cimbard_configure_decode(4); } catch (e) {}
+      var bytes = decodePixels(new Uint8Array(imgData.data ? imgData.data.buffer : imgData), 'RGBA', w, h);
+      return { got: bytes ? bytes.length : 0 };
+    },
+    isReady: function () { return !!window.__engineReady; },
+    reset: function () { try { Module._cimbard_configure_decode(4); } catch (e) {} }
+  };
+})();
 </script>
 </body>
 </html>

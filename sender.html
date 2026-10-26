@@ -127,18 +127,6 @@
     min-height: 34px;
   }
   #status.active { color: #ff7a1a; }
-  #progress {
-    flex: 0 0 auto;
-    height: 3px;
-    background: rgba(255,255,255,.06);
-    display: none;
-  }
-  #progress.show { display: block; }
-  #progress-bar {
-    height: 100%; width: 0%;
-    background: linear-gradient(90deg, #ff7a1a, #ffb347);
-    transition: width .4s;
-  }
 
   /* 模式面板（浮层，位于控制栏上方） */
   #panels {
@@ -238,7 +226,7 @@
 
     <div class="btn-group">
       <span class="ctl-label" data-i18n="mode">Mode</span>
-      <span id="mode-static" data-i18n="modeColor" title="4C 彩色是目前唯一可解模式：黑白/B 与 8C 在本解码引擎不兼容（引擎帧格式固定），切换会导致接收端无法识别。">4C · Color</span>
+      <span id="mode-static" data-i18n="modeColor" title="4C 彩色：官方 Cimbar 引擎最稳模式，手机摄像头可直接扫描；黑白 B 模式需特定硬件，已禁用。">4C · Color</span>
     </div>
     <div class="btn-group">
       <span class="ctl-label" data-i18n="ecc">Error Tolerance</span>
@@ -249,16 +237,6 @@
       </select>
     </div>
     <div class="hint" data-i18n="eccHint"></div>
-
-    <div class="btn-group">
-      <span class="ctl-label" data-i18n="segSize">Segment</span>
-      <select id="seg-select" onchange="Main.setSegSize(this.value)">
-        <option value="262144">256 KB</option>
-        <option value="524288" selected>512 KB</option>
-        <option value="1048576">1 MB</option>
-        <option value="2097152">2 MB</option>
-      </select>
-    </div>
 
     <div class="btn-group">
       <span class="ctl-label" data-i18n="fps">Framerate</span>
@@ -281,7 +259,6 @@
     <button id="fullscreen-btn" onclick="Main.toggleFullscreen()" data-i18n="fullscreen">Fullscreen</button>
   </div>
 
-  <div id="progress"><div id="progress-bar"></div></div>
   <div id="status"></div>
 
   <input type="file" id="file_input" style="display:none" onchange="Main.fileInput(this)">
@@ -293,32 +270,32 @@
     var I18N = {
       en: {
         title: 'Visual Transfer · Sender', home: '◂ Home', appName: 'Visual Transfer',
-        file: 'File', text: 'Text', image: 'Image', mode: 'Mode', segSize: 'Segment', fps: 'Framerate', fullscreen: 'Fullscreen',
+        file: 'File', text: 'Text', image: 'Image', mode: 'Mode', fps: 'Framerate', fullscreen: 'Fullscreen',
         modeColor: '4C · Color',
-        qrSize: 'QR Size', qrHint: 'On the phone, fit the QR inside the receiver\'s dashed frame (~55% of screen — bigger overflows the frame and also fails). Drag the QR here (or use the buttons) to move it away from glare; shrink it to make the phone work closer, enlarge it to be scanned from farther away.',
+        qrSize: 'QR Size', qrHint: 'On the phone, fit the QR inside the receiver\'s dashed frame (~55% of screen). Drag the QR here (or use the buttons) to move it away from glare; shrink it to make the phone work closer, enlarge it to be scanned from farther away.',
         ecc: 'Error Tolerance', eccStd: 'Standard', eccHigh: 'High', eccUltra: 'Ultra',
-        eccHint: 'Higher tolerance = more robust to glare/blur, but slower transfer. The receiver must select the SAME tolerance.',
-        modeHint: 'Anti-glare tips: keep the screen brightness high, use fullscreen, move the phone 30–50 cm away, avoid strong lights reflecting on the screen.',
+        eccHint: 'Higher tolerance is more robust to glare/blur but transfers slower. Keep Standard unless the phone struggles; the official engine keeps its default error-correction in Standard mode.',
+        modeHint: 'Anti-glare tips: keep screen brightness high, use fullscreen, keep the phone 30–50 cm away, avoid strong lights reflecting on the screen.',
         fileTitle: 'Send a File', chooseFile: 'Choose File',
         fileHint: 'You can also drag & drop a file anywhere on this window, or click directly on the QR area.',
         textTitle: 'Send Text', sendText: 'Send Text', textPh: 'Paste or type the text to transfer…',
         imageTitle: 'Send an Image', chooseImage: 'Choose Image', sendImage: 'Send Image',
         imageHint: 'Images are compressed to JPEG (max 1600px) before sending.',
         tapHint1: 'Drag & drop a file anywhere', tapHint2: 'or use the', tapHint3: 'File', tapHint4: 'button below',
-        noFile: 'No file selected', encoding: 'Encoding', done: 'Done · all segments sent',
+        noFile: 'No file selected', encoding: 'Encoding', encodingNote: 'keep the phone scanning until all blocks arrive',
         warnBigTitle: 'Large file warning',
         warnBigMsg: 'This file is about {mb} MB. Visual transmission is slow (roughly 30–60 KB/s on a phone), so this may take {mins}–{mins2} minutes. Continue anyway?',
         warnHugeTitle: 'Very large file',
         warnHugeMsg: 'This file is about {mb} MB and may take {mins}+ minutes. Transmission is not guaranteed to complete before the phone runs out of patience. Continue anyway?',
-        canceled: 'Cancelled'
+        canceled: 'Cancelled', engineLoading: 'Loading engine…', engineReady: 'Ready'
       },
       zh: {
         title: '视觉传输 · 发送端', home: '◂ 首页', appName: '视觉传输',
-        file: '档案', text: '文本', image: '图片', mode: '模式', segSize: '段大小', fps: '帧率', fullscreen: '全屏',
+        file: '档案', text: '文本', image: '图片', mode: '模式', fps: '帧率', fullscreen: '全屏',
         modeColor: '4C · 彩色',
         qrSize: '二維碼大小', qrHint: '手機端請把 QR 調整到接收端的虛線框內（約佔畫面五成半；太大超出框也會掃不到）。這裡可拖動 QR 區塊（或用按鈕微調）避開螢幕反光；調小讓手機更近也能掃，調大可從更遠掃描。',
         ecc: '容錯率', eccStd: '標準', eccHigh: '高', eccUltra: '最高',
-        eccHint: '容錯率越高越抗反光/模糊，但傳輸越慢。接收端必須選擇相同的容錯率。',
+        eccHint: '容錯率越高越抗反光/模糊，但傳輸越慢。建議保持「標準」（官方引擎預設容錯）；若手機一直掃不到可試「高」。',
         modeHint: '防反光提示：螢幕亮度調高、使用全螢幕、手機距離 30–50cm、避免強光直射螢幕。',
         fileTitle: '发送档案', chooseFile: '选择档案',
         fileHint: '也可以把档案拖放到本窗口任意位置，或直接点击二维码区域。',
@@ -326,12 +303,12 @@
         imageTitle: '发送图片', chooseImage: '选择图片', sendImage: '开始发送图片',
         imageHint: '图片会先压缩为 JPEG（最长边 1600px）再发送。',
         tapHint1: '把档案拖放到任意位置', tapHint2: '或使用下方', tapHint3: '档案', tapHint4: '按钮',
-        noFile: '未选择档案', encoding: '编码中', done: '完成 · 所有段已发送',
+        noFile: '未选择档案', encoding: '编码中', encodingNote: '请让手机持续扫描，直到所有数据块到达',
         warnBigTitle: '档案过大提醒',
         warnBigMsg: '此档案约 {mb} MB。视觉传输较慢（手机实扫约 30–60 KB/s），预计需要 {mins}–{mins2} 分钟。确定继续吗？',
         warnHugeTitle: '档案非常大',
         warnHugeMsg: '此档案约 {mb} MB，预计耗时 {mins}+ 分钟，传输过程较长且可能扫不完。确定继续吗？',
-        canceled: '已取消'
+        canceled: '已取消', engineLoading: '引擎加载中…', engineReady: '就绪'
       }
     };
     try { var saved = localStorage.getItem(LANG_KEY); if (saved && I18N[saved]) lang = saved; } catch (e) {}
@@ -370,178 +347,60 @@
     var _qrScale = 1;       // QR 显示缩放（0.55–1.0）
     var _qrDX = 0;          // QR 相对中心偏移（px）
     var _qrDY = 0;
-    var _eccValue = 0;      // 容错率（0=引擎默认，32/48=高/最高）
-    var _modeVal = 4;
-
-    // 分段传输状态
-    var _queue = [];        // [{bytes, seq}]
-    var _segCur = -1;
-    var _segTotal = 0;
-    var _origSize = 0;
-    var _segSize = 524288;
+    var _eccValue = 0;      // 容错率（0=官方默认，32/48=高/最高）
     var _currentName = '';
-    var _loopsNeeded = 2;       // 每段至少完整广播 2 轮
-    var _loopsGot = 0;
-    var _minSegMs = 4000;       // 每段最短播放时长（防极小载荷秒切）
-    var _segStart = 0;
-    var _segTimer = null;
-    var _encoder = null;        // qt-works Encoder 实例
+    var _encoding = false;  // 是否有活动编码（帧循环是否渲染）
     var _engineReady = false;
 
-    /* ---------- CTXF v2 封装（13B 头 + name + [meta 12B] + payload） ----------
-       meta 仅文件分段时存在：seq LE32 + total LE32 + origSize LE32 */
-    function buildTransfer(type, name, seq, total, origSize, payload) {
-      // 小载荷 padding：实测 qt-works 解码器对 <1KB 的帧识别失败（块太少帧过稀，
-      // _decodeImage 返回错误、无模板输出）。将 payload 填充到至少 1024B，
-      // 并用 CTXF v2 meta 记录真实长度，接收端按 origSize 截断，padding 无副作用。
-      var MIN_PAD = 1024;
-      if (payload.length < MIN_PAD) {
-        var padded = new Uint8Array(MIN_PAD);
-        padded.set(payload, 0);
-        for (var i = payload.length; i < MIN_PAD; i++) padded[i] = 0xCC;
-        payload = padded;
-      }
-      var hasMeta = 1;   // 所有 v2 传输都带 meta（seq/total/origSize），接收端可精确截断
-      var te = new TextEncoder('utf-8');
-      var nameBytes = te.encode(String(name || 'untitled').slice(0, 200));
-      var payloadLen = payload.length;
-      var h = new Uint8Array(13);
-      h[0] = 0x43; h[1] = 0x54; h[2] = 0x58; h[3] = 0x46;   // "CTXF"
-      h[4] = 2;                                            // ver 2
-      h[5] = type;
-      h[6] = hasMeta;
-      h[7] = nameBytes.length & 0xff;
-      h[8] = (nameBytes.length >> 8) & 0xff;
-      h[9] = payloadLen & 0xff;
-      h[10] = (payloadLen >> 8) & 0xff;
-      h[11] = (payloadLen >> 16) & 0xff;
-      h[12] = (payloadLen >> 24) & 0xff;
-      var meta = new Uint8Array(hasMeta ? 12 : 0);
-      if (hasMeta) {
-        meta[0] = seq & 0xff; meta[1] = (seq >> 8) & 0xff; meta[2] = (seq >> 16) & 0xff; meta[3] = (seq >> 24) & 0xff;
-        meta[4] = total & 0xff; meta[5] = (total >> 8) & 0xff; meta[6] = (total >> 16) & 0xff; meta[7] = (total >> 24) & 0xff;
-        meta[8] = origSize & 0xff; meta[9] = (origSize >> 8) & 0xff; meta[10] = (origSize >> 16) & 0xff; meta[11] = (origSize >> 24) & 0xff;
-      }
-      var out = new Uint8Array(h.length + nameBytes.length + meta.length + payloadLen);
-      out.set(h, 0);
-      out.set(nameBytes, h.length);
-      out.set(meta, h.length + nameBytes.length);
-      out.set(payload, h.length + nameBytes.length + meta.length);
-      return out;
-    }
+    /* ---------- 官方 Cimbar 引擎（cimbar_js.wasm） ---------- */
+    function moduleRef() { return window.__CimbarModule; }
 
-    /* ---------- 引擎编码（qt-works Encoder） ---------- */
-    function encodeU8(u8, name) {
-      if (!_encoder) return;
-      Main.setTitle(name);
-      var f = new File([u8], 'seg.bin', { type: 'application/octet-stream' });
-      _loopsGot = 0;
-      _segStart = performance.now();
-      _encoder.encode(f);
-    }
-
-    function rateForMode() {
-      // 4C 手机实扫有效码率保守值（KB/s），用于每段兜底广播时长估算。
-      // 广播一轮 ≈ 段大小/20KBps（@15fps），本值略小于此，确保至少覆盖约 1 轮 +
-      // 慢手机的完整解码时间（30–60KB/s）。
-      return 25;
-    }
-
-    function updateProgress() {
-      var st = document.getElementById('status');
-      var pb = document.getElementById('progress');
-      var bar = document.getElementById('progress-bar');
-      if (_segTotal > 0 && _segCur >= 0) {
-        var frac = (_segCur + 1) / _segTotal;
-        st.innerHTML = window.__t('encoding') + ' · ' + (_segCur + 1) + '/' + _segTotal;
-        st.classList.add('active');
-        pb.classList.add('show');
-        bar.style.width = Math.round(frac * 100) + '%';
-      }
-    }
-
-    function finishAll() {
-      _queue = [];
-      var st = document.getElementById('status');
-      st.innerHTML = window.__t('done');
-      st.classList.remove('active');
-      setTimeout(function () {
-        st.innerHTML = window.__t('noFile');
-        var bar = document.getElementById('progress-bar');
-        bar.style.width = '0%';
-      }, 3000);
-    }
-
-    function advanceIfDue() {
-      if (_queue.length === 0) return;
-      if (_segCur >= _segTotal - 1) {
-        // 最后一段已广播足够轮次 → 完成
-        finishAll();
-        return;
-      }
-      _segCur += 1;   // 从 -1 → 0 开始，或切到下一段
-      var seg = _queue[_segCur];
-      var u8 = buildTransfer(0, _currentName, _segCur, _segTotal, _origSize, seg.bytes);
-      encodeU8(u8, _currentName);
-      updateProgress();
-      scheduleSegTimer(seg.bytes.length);
-    }
-
-    function scheduleSegTimer(segLen) {
-      if (_segTimer) { clearTimeout(_segTimer); _segTimer = null; }
-      var dur = Math.max(5000, Math.round(segLen / (rateForMode() * 1024) * 1000 + 4000));
-      _segTimer = setTimeout(function () {
-        // 兜底：循环检测失效时按估计时长强制切换
-        if (_segCur >= 0 && _segCur < _segTotal && _loopsGot < _loopsNeeded) {
-          advanceIfDue();
+    function officialEncode(name, bytes) {
+      var M = moduleRef();
+      if (!_engineReady || !M || !M._cimbare_init_encode) return;
+      try {
+        // 模式 + 容错（Standard 用 -1 官方默认；High/Ultra 传 32/48）
+        M._cimbare_configure(4, _eccValue > 0 ? _eccValue : -1);
+        var chunkSize = M._cimbare_encode_bufsize();
+        var nm = new TextEncoder('utf-8').encode(String(name || 'untitled').slice(0, 255));
+        var np = M._malloc(nm.length);
+        M.HEAPU8.set(nm, np);
+        var initRes = M._cimbare_init_encode(np, nm.length, -1);
+        M._free(np);
+        for (var o = 0; o < bytes.length; o += chunkSize) {
+          var part = bytes.subarray(o, Math.min(o + chunkSize, bytes.length));
+          var dp = M._malloc(part.length);
+          M.HEAPU8.set(part, dp);
+          M._cimbare_encode(dp, part.length);
+          M._free(dp);
         }
-      }, dur);
-    }
-
-    function onEncoderLoop() {
-      if (_encoder === null || _queue.length === 0) return;
-      _loopsGot += 1;
-      if (_loopsGot >= _loopsNeeded && performance.now() - _segStart >= _minSegMs) {
-        advanceIfDue();
+        // flush：0 长度触发 fountain 收尾
+        var fp = M._malloc(1);
+        M._cimbare_encode(fp, 0);
+        M._free(fp);
+        _currentName = name;
+        _encoding = true;
+        var st = document.getElementById('status');
+        st.innerHTML = window.__t('encoding') + ' · ' + name + ' — ' + window.__t('encodingNote');
+        st.classList.add('active');
+        Main.setTitle(name);
+      } catch (e) {
+        console.error('officialEncode failed', e);
+        var st = document.getElementById('status');
+        st.innerHTML = 'Encode failed: ' + (e && e.message ? e.message : e);
       }
     }
 
-    /* 单发（文本/图片/小文件单段） */
-    function sendSingle(type, name, bytes) {
-      var u8 = buildTransfer(type, name, 0, 1, bytes.length, bytes);
-      _segCur = 0; _segTotal = 1; _currentName = name; _origSize = bytes.length;
-      _queue = [{ bytes: bytes, seq: 0 }];
-      encodeU8(u8, name);
-      var st = document.getElementById('status');
-      st.innerHTML = window.__t('encoding') + ' · ' + name;
-      st.classList.add('active');
+    function officialFrame() {
+      var M = moduleRef();
+      if (!_engineReady || !_encoding) return;
+      try {
+        M._cimbare_render();
+        M._cimbare_next_frame(false);
+      } catch (e) { /* 单帧失败忽略 */ }
     }
 
-    /* 文件分段发送 */
-    function sendFileSegments(name, bytes) {
-      var len = bytes.length;
-      var total = Math.max(1, Math.ceil(len / _segSize));
-      _queue = [];
-      for (var i = 0; i < total; i++) {
-        var start = i * _segSize;
-        var end = Math.min(start + _segSize, len);
-        _queue.push({ bytes: bytes.slice(start, end), seq: i });
-      }
-      _segCur = -1;
-      _segTotal = total;
-      _origSize = len;
-      _currentName = name;
-      advanceIfDue();
-    }
-
-    function readWhole(file, done) {
-      var reader = new FileReader();
-      reader.onload = function (ev) { done(new Uint8Array(ev.target.result)); };
-      reader.onerror = function () { console.error('read failed'); };
-      reader.readAsArrayBuffer(file);
-    }
-
-    /* 大档提醒：>30MB 提醒，>60MB 强提醒 */
+    /* ---------- 大档提醒：>30MB 提醒，>60MB 强提醒 ---------- */
     function confirmSize(len) {
       var mb = Math.round(len / 1048576);
       if (mb >= 60) {
@@ -562,11 +421,14 @@
         st.innerHTML = window.__t('canceled');
         return;
       }
-      if (bytes.length <= _segSize) {
-        sendSingle(0, name, bytes);
-      } else {
-        sendFileSegments(name, bytes);
-      }
+      officialEncode(name, bytes);
+    }
+
+    function readWhole(file, done) {
+      var reader = new FileReader();
+      reader.onload = function (ev) { done(new Uint8Array(ev.target.result)); };
+      reader.onerror = function () { console.error('read failed'); };
+      reader.readAsArrayBuffer(file);
     }
 
     function compressImage(blob, maxDim, quality) {
@@ -638,29 +500,19 @@
         inv.style.top = cpos.top + 'px';
       },
 
-      setEngine: function (enc) {
-        _encoder = enc;
-        _engineReady = true;
-      },
       engineReady: function () { return _engineReady; },
-
-      onEncoderLoop: onEncoderLoop,
+      isEncoding: function () { return _encoding; },
+      setEngineReady: function () { _engineReady = true; },
+      officialFrame: officialFrame,
 
       togglePause: function (pause) {
         if (pause === undefined) { _pause = _pause ? 0 : 1; }
         else { _pause = pause ? 1 : 0; }
-        if (_encoder) _encoder.togglePause(_pause > 0);
-      },
-
-      setSegSize: function (val) {
-        _segSize = parseInt(val, 10) || 524288;
-        try { localStorage.setItem('cimbar-segsize', String(_segSize)); } catch (e) {}
       },
 
       setFPS: function (val) {
         if (!val) return;
         _interval = Math.floor(1000 / val);
-        if (_encoder) _encoder.interval = _interval;
         var v = document.getElementById('fps-val');
         if (v) v.textContent = val;
       },
@@ -704,7 +556,7 @@
         if (!el) return;
         var s = el.value;
         if (!s.trim()) return;
-        sendSingle(1, 'text.txt', new TextEncoder('utf-8').encode(s));
+        officialEncode('text.txt', new TextEncoder('utf-8').encode(s));
         Main.togglePanel('text');
         Main.togglePause(false);
       },
@@ -722,7 +574,7 @@
 
       sendImageNow: function () {
         if (_pendingImage) {
-          sendSingle(2, _pendingImage.name, _pendingImage.bytes);
+          officialEncode(_pendingImage.name, _pendingImage.bytes);
           _pendingImage = null;
           document.getElementById('btn-send-img').disabled = true;
           Main.togglePanel('image');
@@ -765,13 +617,14 @@
         if (lbl) lbl.textContent = '100%';
       },
 
-      /* 容错率：调用 wasm configure 切换 ECC（编码帧与解码 chunkSize 都跟随）。
-         接收端必须选择相同值；0 = 引擎默认（configure 传 150 触发默认约 16B ECC）。 */
+      /* 容错率：调用官方 wasm configure 切换 ECC（仅发送端侧；接收端固定官方默认解码）。
+         0 = Standard（官方默认 -1），32/48 = 高/最高。 */
       setECC: function (v) {
         _eccValue = parseInt(v, 10) || 0;
         try {
-          if (window.__Cimbar && window.__Cimbar._configure) {
-            window.__Cimbar._configure(2, (_eccValue > 0 ? _eccValue : 150), -1, 0);
+          var M = moduleRef();
+          if (_engineReady && M && M._cimbare_configure) {
+            M._cimbare_configure(4, _eccValue > 0 ? _eccValue : -1);
           }
         } catch (e) {}
         var sel = document.getElementById('ecc-select');
@@ -804,63 +657,39 @@
         document.title = window.__t('title') + ' — ' + msg;
       },
 
-      segmentState: function () {
-        return { cur: _segCur, total: _segTotal };
-      },
-
       /* 测试/桥接 */
       startFileSend: startFileSend,
-      sendSingle: sendSingle,
-      sendFileSegments: sendFileSegments,
-      handleImageBlob: handleImageBlob,
-      advanceIfDue: advanceIfDue
+      officialEncode: officialEncode,
+      handleImageBlob: handleImageBlob
     };
   }();
   </script>
 
   <script type="text/javascript">
-  /* ---------- qt-works 引擎初始化（主线程，无需 Worker） ---------- */
+  /* ---------- 官方 Cimbar 引擎初始化（Emscripten Module.canvas 绑定 WebGL） ----------
+     注意：Module 必须定义在全局作用域（官方 loader 用 var Module=typeof Module!=... 复用） */
+  var Module = {};
+  window.__CimbarModule = Module;
   (function () {
-    var Cimbar = {};
-    window.__Cimbar = Cimbar;
-    Cimbar.onRuntimeInitialized = function () {
+    var canvas = document.getElementById('canvas');
+    Module.canvas = canvas;
+    Module.onRuntimeInitialized = function () {
       try {
-        var canvas = document.getElementById('canvas');
         Main.init(canvas);
-        import('./index.js').then(function (m) {
-          var enc = new m.Encoder(Cimbar, canvas);
-          enc.interval = 66;
-          Main.setEngine(enc);
-          // 循环检测补丁：_next_frame 返回帧计数，循环重启时计数回退
-          var orig = Cimbar._next_frame.bind(Cimbar);
-          var prev = -1;
-          Cimbar._next_frame = function () {
-            var r;
-            try { r = orig(); } catch (e) { r = prev + 1; }
-            if (prev >= 1 && r <= prev) Main.onEncoderLoop();
-            prev = r;
-            return r;
-          };
-          Main.setFPS(15);
-          var st = document.getElementById('status');
-          st.innerHTML = window.__t('noFile');
-        }).catch(function (e) {
-          var st = document.getElementById('status');
-          st.innerHTML = 'Engine load failed: ' + (e && e.message ? e.message : e);
-        });
+        Module._cimbare_configure(4, -1);
+        // 启动帧循环（官方 API：render + next_frame，66ms/帧 ≈ 15fps）
+        setInterval(function () { Main.officialFrame(); }, 66);
+        Main.setEngineReady();
+        var st = document.getElementById('status');
+        st.innerHTML = window.__t('engineReady');
       } catch (e) {
         var st = document.getElementById('status');
-        st.innerHTML = 'Init failed: ' + (e && e.message ? e.message : e);
+        st.innerHTML = 'Engine init failed: ' + (e && e.message ? e.message : e);
       }
     };
-    import('./index.js').then(function (m) {
-      m.initCimbar(Cimbar, new URL('./index.wasm', location.href).href);
-    }).catch(function (e) {
-      var st = document.getElementById('status');
-      st.innerHTML = 'Engine import failed: ' + (e && e.message ? e.message : e);
-    });
   })();
   </script>
+  <script type="text/javascript" src="cimbar_js.2026-01-20T0312.js"></script>
 
   <script type="text/javascript">
   /* 事件 */
@@ -871,6 +700,7 @@
       if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;
       Main.togglePanel('file'); e.preventDefault();
     }
+    else if (e.key == 'Backspace' || e.keyCode == 8) { Main.togglePause(true); e.preventDefault(); }
   }, true);
 
   window.addEventListener('touchstart', function (e) { Main.togglePause(true); }, false);
@@ -907,10 +737,6 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     Main.initQRDrag();
-    try {
-      var saved = localStorage.getItem('cimbar-segsize');
-      if (saved) { Main.setSegSize(saved); }
-    } catch (e) {}
     var inp = document.createElement('input');
     inp.type = 'file';
     inp.id = 'img-input';
@@ -923,12 +749,9 @@
   /* 调试/测试句柄 */
   window.__senderTest = {
     engineReady: function () { return Main.engineReady(); },
-    segmentState: function () { return Main.segmentState(); },
     sendTextNow: function (txt) { document.getElementById('txt').value = txt; Main.sendTextNow(); },
-    sendSingle: function (type, name, bytes) { Main.sendSingle(type, name, bytes); },
     startFileSend: function (name, bytes) { Main.startFileSend(name, bytes); },
-    canvasDataUrlLen: function () { return document.getElementById('canvas').toDataURL().length; },
-    advance: function () { Main.advanceIfDue(); }
+    isEncoding: function () { return Main.isEncoding(); }
   };
   </script>
 </body>
