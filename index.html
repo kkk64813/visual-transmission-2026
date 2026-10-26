@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Visual Transfer</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000; color: #eee;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px 16px; position: relative;
+  }
+  .lang-btn {
+    position: absolute; top: 16px; right: 16px;
+    background: #111; color: #ff6600; border: 1px solid #333; border-radius: 6px;
+    padding: 6px 12px; font-size: 13px; cursor: pointer;
+  }
+  .lang-btn:hover { border-color: #ff6600; }
+  h1 { color: #ff6600; font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #888; font-size: 13px; margin-bottom: 28px; text-align: center; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .card {
+    width: 240px; background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 14px;
+    padding: 22px; text-align: center; text-decoration: none; color: #eee;
+    transition: border-color .2s, transform .2s;
+  }
+  .card:hover { border-color: #ff6600; transform: translateY(-2px); }
+  .card .icon { font-size: 30px; font-weight: 700; color: #ff6600; margin-bottom: 10px; }
+  .card .name { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .card .desc { font-size: 12px; color: #888; line-height: 1.6; }
+  .note { color: #555; font-size: 12px; margin-top: 28px; max-width: 480px; text-align: center; line-height: 1.8; }
+</style>
+</head>
+<body>
+  <button id="langBtn" class="lang-btn">中文</button>
+  <h1 data-i18n="appName">视觉传输</h1>
+  <div class="sub" data-i18n="sub">电脑屏幕 &lt;—摄像头—&gt; 手机，无需网络，纯视觉通道</div>
+
+  <div class="cards">
+    <a class="card" href="./sender.html">
+      <div class="icon">S</div>
+      <div class="name" data-i18n="sendName">发送端（电脑）</div>
+      <div class="desc" data-i18n="sendDesc">在电脑浏览器打开：选择文件 / 文本 / 图片，屏幕显示编码动画</div>
+    </a>
+    <a class="card" href="./receiver.html">
+      <div class="icon">R</div>
+      <div class="name" data-i18n="recvName">接收端（手机）</div>
+      <div class="desc" data-i18n="recvDesc">在手机浏览器打开：摄像头对准屏幕，自动接收并保存 / 复制 / 预览</div>
+    </a>
+  </div>
+
+  <div class="note">
+    <span data-i18n="note1">接收端需要摄像头权限，页面必须通过 HTTPS（GitHub Pages）或 localhost 打开。</span><br>
+    <span data-i18n="note2">手机端可"添加到主屏幕"当作 App 使用（PWA，支持离线缓存）。</span>
+  </div>
+
+<script>
+/* ---------- i18n：默认英文，可切换中文，选择本地记住 ---------- */
+(function () {
+  var LANG_KEY = 'cimbar-lang';
+  var I18N = {
+    en: {
+      title: 'Visual Transfer',
+      appName: 'Visual Transfer',
+      sub: 'Computer screen —camera—> phone · no network, pure visual channel',
+      sendName: 'Sender (Computer)',
+      sendDesc: 'Open on your computer: pick a file / text / image, the screen plays the encoded animation',
+      recvName: 'Receiver (Phone)',
+      recvDesc: 'Open on your phone: point the camera at the screen, auto-receive, then save / copy / preview',
+      note1: 'The receiver needs camera permission; open via HTTPS (GitHub Pages) or localhost only.',
+      note2: 'On a phone, "Add to Home Screen" turns it into an app (PWA, offline cached).'
+    },
+    zh: {
+      title: '视觉传输',
+      appName: '视觉传输',
+      sub: '电脑屏幕 <—摄像头—> 手机，无需网络，纯视觉通道',
+      sendName: '发送端（电脑）',
+      sendDesc: '在电脑浏览器打开：选择文件 / 文本 / 图片，屏幕显示编码动画',
+      recvName: '接收端（手机）',
+      recvDesc: '在手机浏览器打开：摄像头对准屏幕，自动接收并保存 / 复制 / 预览',
+      note1: '接收端需要摄像头权限，页面必须通过 HTTPS（GitHub Pages）或 localhost 打开。',
+      note2: '手机端可"添加到主屏幕"当作 App 使用（PWA，支持离线缓存）。'
+    }
+  };
+  var lang = 'en';
+  try { var saved = localStorage.getItem(LANG_KEY); if (saved && I18N[saved]) lang = saved; } catch (e) {}
+  function t(key, vars) {
+    var s = (I18N[lang] && I18N[lang][key]) || key;
+    if (vars) { for (var k in vars) { s = s.split('{' + k + '}').join(String(vars[k])); } }
+    return s;
+  }
+  function applyLang() {
+    document.documentElement.lang = (lang === 'zh') ? 'zh-CN' : 'en';
+    document.title = t('title');
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      el.textContent = t(el.getAttribute('data-i18n'));
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
+      el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph')));
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+      el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
+    });
+    document.getElementById('langBtn').textContent = (lang === 'en') ? '中文' : 'English';
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+  }
+  document.getElementById('langBtn').addEventListener('click', function () {
+    lang = (lang === 'en') ? 'zh' : 'en';
+    applyLang();
+    if (window.__onLangChange) window.__onLangChange();
+  });
+  applyLang();
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>

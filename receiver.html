@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Visual Transfer · Receiver</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000; color: #eee;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    max-width: 640px; margin: 0 auto; padding: 12px;
+  }
+  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  header h1 { font-size: 17px; color: #ff6600; }
+  header a { color: #777; font-size: 13px; text-decoration: none; }
+  .tip { font-size: 12px; color: #666; }
+  #langBtn {
+    background: #111; color: #ff6600; border: 1px solid #333; border-radius: 6px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer;
+  }
+  #langBtn:hover { border-color: #ff6600; }
+  #stage { position: relative; border: 1px solid #222; border-radius: 12px; overflow: hidden; background: #000; }
+  #video { width: 100%; display: block; background: #000; min-height: 180px; }
+  #overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    justify-content: flex-end; padding: 10px; pointer-events: none;
+  }
+  #align {
+    align-self: flex-start; font-size: 12px; border-radius: 6px; padding: 4px 10px;
+    background: rgba(255,255,255,.08); color: #aaa;
+  }
+  #align.ok { background: rgba(47,125,79,.35); color: #7ee2a0; }
+  #align.bad { background: rgba(200,60,50,.35); color: #ff9d94; }
+  #progressWrap { height: 6px; background: #1a1a1a; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  #progressBar { height: 100%; width: 0; background: #ff6600; transition: width .15s; }
+  #meta { font-size: 12px; color: #888; margin-top: 6px; line-height: 1.6; }
+  #controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
+  button, .btn, label.btn {
+    background: #111; color: #ff6600; border: 1px solid #333; border-radius: 8px;
+    padding: 10px 16px; font-size: 14px; cursor: pointer; display: inline-block;
+  }
+  button:hover, .btn:hover, label.btn:hover { border-color: #ff6600; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: #ff6600; color: #000; border-color: #ff6600; font-weight: 700; }
+  .file-in { position: absolute; left: -9999px; }
+  #result { margin: 12px 0; }
+  .card {
+    background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 10px; padding: 12px; margin-bottom: 10px;
+  }
+  .card .type { font-size: 12px; color: #ff6600; font-weight: 700; }
+  .card .name { font-size: 14px; margin: 4px 0; word-break: break-all; }
+  .card .size { font-size: 12px; color: #888; }
+  .card .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .card img.preview { max-width: 100%; max-height: 260px; border-radius: 8px; display: block; margin: 8px 0; }
+  .card pre {
+    background: #000; border: 1px solid #222; border-radius: 6px; padding: 8px;
+    font-size: 13px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    color: #ddd; margin: 8px 0;
+  }
+  #history h2 { font-size: 14px; color: #ff6600; margin: 14px 0 8px; }
+  #historyList { list-style: none; }
+  #historyList li {
+    display: flex; align-items: center; gap: 8px;
+    background: #0d0d0d; border: 1px solid #222; border-radius: 8px;
+    padding: 8px 10px; margin-bottom: 6px; font-size: 13px; flex-wrap: wrap;
+  }
+  #historyList .h-name { flex: 1; min-width: 120px; word-break: break-all; }
+  #historyList .h-meta { color: #666; font-size: 12px; }
+  #historyList a, #historyList button { font-size: 12px; padding: 4px 10px; }
+  #err { color: #ff9d94; font-size: 13px; margin-top: 6px; display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="./index.html" data-i18n="home">首页</a>
+  <h1 data-i18n="title">视觉传输 · 接收端</h1>
+  <span class="tip" data-i18n="tip">可添加到主屏幕当作 App 使用</span>
+  <button id="langBtn">中文</button>
+</header>
+
+<div id="stage">
+  <video id="video" playsinline webkit-playsinline muted autoplay></video>
+  <canvas id="scan" hidden></canvas>
+  <div id="overlay">
+    <span id="align"></span>
+    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div id="meta"></div>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="btnScan" class="primary" disabled data-i18n="btnScan">开始扫描</button>
+  <button id="btnStop" disabled data-i18n="btnStop">停止</button>
+  <label class="btn" data-i18n="testImg">解码图片(测试)<input type="file" id="imgFile" class="file-in" accept="image/*"></label>
+</div>
+<div id="err"></div>
+
+<div id="result"></div>
+
+<div id="history">
+  <h2 data-i18n="historyTitle">已接收记录</h2>
+  <ul id="historyList"></ul>
+</div>
+
+<script>
+/* ---------- i18n：默认英文，可切换中文，选择本地记住 ---------- */
+(function () {
+  var LANG_KEY = 'cimbar-lang';
+  var I18N = {
+    en: {
+      title: 'Visual Transfer · Receiver',
+      home: 'Home',
+      tip: 'Add to Home Screen to use as an app',
+      alignIdle: 'Not scanning yet',
+      alignOk: 'Aligned — keep it steady',
+      alignBad: 'Not aligned — adjust angle / distance',
+      metaIdle: 'Waiting…',
+      btnScan: 'Start Scan',
+      btnScanning: 'Scanning…',
+      btnScanAgain: 'Scan Next',
+      btnStop: 'Stop',
+      testImg: 'Decode Image (test)',
+      historyTitle: 'Received',
+      download: 'Download',
+      delete: 'Delete',
+      typeFile: 'File',
+      typeText: 'Text',
+      typeImage: 'Image',
+      recvDone: 'Received: {name} ({size})\nTap "Start Scan" to receive the next file',
+      noHeaderNote: 'Note: received raw data without a header, saved as received.bin',
+      copyText: 'Copy Text',
+      copied: 'Copied',
+      copyFail: 'Copy failed — select manually',
+      saveImage: 'Save Image',
+      saveFile: 'Save File',
+      decodeFail: 'Cannot decode text',
+      readyMeta: 'Ready: tap "Start Scan", point the camera at the animation on screen.',
+      progressMeta: 'Decoding… {p}%',
+      camOnMeta: 'Camera on: {w}×{h}\nPoint at the encoded animation',
+      camErr: 'Camera error: {msg}. Allow camera permission in the browser and open via HTTPS/localhost.',
+      decodeErr: 'Decode error (code {code}): unsteady frame or dropped frames — hold steady, avoid glare, rescan.',
+      initFail: 'Decoder initialization failed',
+      initTimeout: 'Decoder library load timed out: open via HTTPS or localhost (file:// cannot load WASM).',
+      scanStartFail: 'Failed to start scanning',
+      imgDecoding: 'Decoding image…',
+      imgDecoded: 'Image decoded (see result below).',
+      imgDecodeFail: 'Image decode failed',
+      stopped: 'Stopped.'
+    },
+    zh: {
+      title: '视觉传输 · 接收端',
+      home: '首页',
+      tip: '可添加到主屏幕当作 App 使用',
+      alignIdle: '尚未开始扫描',
+      alignOk: '已对齐，请保持稳定',
+      alignBad: '未对齐，请调整角度/距离',
+      metaIdle: '就绪等待中…',
+      btnScan: '开始扫描',
+      btnScanning: '扫描中…',
+      btnScanAgain: '继续扫描',
+      btnStop: '停止',
+      testImg: '解码图片(测试)',
+      historyTitle: '已接收记录',
+      download: '下载',
+      delete: '删除',
+      typeFile: '文件',
+      typeText: '文本',
+      typeImage: '图片',
+      recvDone: '接收完成：{name}（{size}）\n点击"开始扫描"可接收下一个文件',
+      noHeaderNote: '注：收到无头部封装的原始数据，已按文件保存为 received.bin',
+      copyText: '复制文本',
+      copied: '已复制',
+      copyFail: '复制失败，请手动选择',
+      saveImage: '保存图片',
+      saveFile: '保存文件',
+      decodeFail: '(无法解码文本)',
+      readyMeta: '就绪：点击"开始扫描"，将手机摄像头对准电脑屏幕上的编码动画。',
+      progressMeta: '解码中… 进度 {p}%',
+      camOnMeta: '摄像头已开启：{w}×{h}\n请对准屏幕上的编码画面',
+      camErr: '摄像头错误：{msg}。请在浏览器地址栏允许摄像头权限，并使用 HTTPS/localhost 打开。',
+      decodeErr: '解码出错（代码 {code}）：画面不稳或帧丢失，请保持手机稳定、避免反光后重扫。',
+      initFail: '解码器初始化失败',
+      initTimeout: '解码库加载超时：请确认通过 HTTPS 或 localhost 打开（file:// 无法加载 WASM）。',
+      scanStartFail: '启动扫描失败',
+      imgDecoding: '正在解码图片…',
+      imgDecoded: '图片解码完成（见下方结果）。',
+      imgDecodeFail: '图片解码失败',
+      stopped: '已停止。'
+    }
+  };
+  var lang = 'en';
+  try { var saved = localStorage.getItem(LANG_KEY); if (saved && I18N[saved]) lang = saved; } catch (e) {}
+  function t(key, vars) {
+    var s = (I18N[lang] && I18N[lang][key]) || key;
+    if (vars) { for (var k in vars) { s = s.split('{' + k + '}').join(String(vars[k])); } }
+    return s;
+  }
+  function applyLang() {
+    document.documentElement.lang = (lang === 'zh') ? 'zh-CN' : 'en';
+    document.title = t('title');
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      el.textContent = t(el.getAttribute('data-i18n'));
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
+      el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph')));
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+      el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
+    });
+    document.getElementById('langBtn').textContent = (lang === 'en') ? '中文' : 'English';
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+  }
+  document.getElementById('langBtn').addEventListener('click', function () {
+    lang = (lang === 'en') ? 'zh' : 'en';
+    applyLang();
+    if (window.__onLangChange) window.__onLangChange();
+  });
+  applyLang();
+})();
+</script>
+
+<script type="module">
+import { Decoder, initCimbar } from './index.js';
+
+const t = window.__t;
+
+const TYPE_FILE = 0, TYPE_TEXT = 1, TYPE_IMAGE = 2;
+const TYPE_MIME = { 0: 'application/octet-stream', 1: 'text/plain;charset=utf-8', 2: 'image/jpeg' };
+function typeLabel(type) {
+  return type === TYPE_TEXT ? t('typeText') : type === TYPE_IMAGE ? t('typeImage') : t('typeFile');
+}
+function isValidType(type) { return type >= TYPE_FILE && type <= TYPE_IMAGE; }
+
+const video = document.getElementById('video');
+const scanCanvas = document.getElementById('scan');
+const btnScan = document.getElementById('btnScan');
+const btnStop = document.getElementById('btnStop');
+const alignEl = document.getElementById('align');
+const progressBar = document.getElementById('progressBar');
+const metaEl = document.getElementById('meta');
+const errEl = document.getElementById('err');
+const resultEl = document.getElementById('result');
+const historyList = document.getElementById('historyList');
+
+const Cimbar = {};
+let decoder = null;
+let scanning = false;
+let lastRec = null;          // 最近一次接收结果（语言切换时重绘）
+let metaKey = null, metaVars = null;
+let alignKey = null, alignOk = null;
+
+function absUrl(p) { return new URL(p, location.href).href; }
+function showErr(msg) { errEl.style.display = 'block'; errEl.textContent = msg; }
+function hideErr() { errEl.style.display = 'none'; }
+function setMeta(key, vars) { metaKey = key; metaVars = vars || null; metaEl.textContent = t(key, vars); }
+function setAlign(key, ok) { alignKey = key; alignOk = ok || null; alignEl.className = ok ? 'ok' : (ok === false ? 'bad' : ''); alignEl.textContent = t(key); }
+function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1024).toFixed(1) + ' KB'; }
+function fmtTime(t) {
+  const d = new Date(t);
+  const p = (x) => (x < 10 ? '0' : '') + x;
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function safeName(n) {
+  return String(n || 'received').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 200) || 'received';
+}
+
+/* ---------- CTXF 解析 ---------- */
+function parseTransfer(u8) {
+  if (u8.length < 13) return null;
+  const magic = String.fromCharCode(u8[0], u8[1], u8[2], u8[3]);
+  if (magic !== 'CTXF' || u8[4] !== 1) return null;
+  const type = u8[5];
+  const nameLen = u8[7] | (u8[8] << 8);
+  const plen = (u8[9] | (u8[10] << 8) | (u8[11] << 16) | (u8[12] << 24)) >>> 0;
+  if (13 + nameLen + plen !== u8.length) return null;
+  const name = new TextDecoder().decode(u8.subarray(13, 13 + nameLen));
+  const payload = u8.subarray(13 + nameLen);
+  return { type, name, payload };
+}
+
+/* ---------- 接收完成 ---------- */
+function handleSuccess(data) {
+  const u8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+  let rec;
+  const parsed = parseTransfer(u8);
+  if (parsed) {
+    rec = {
+      name: safeName(parsed.name),
+      type: isValidType(parsed.type) ? parsed.type : TYPE_FILE,
+      size: parsed.payload.length,
+      blob: new Blob([parsed.payload], { type: TYPE_MIME[isValidType(parsed.type) ? parsed.type : 0] }),
+    };
+  } else {
+    // 兼容：旧版无 CTXF 头的原始数据流（如 sender-legacy.html / 官方 cimbar.org）
+    rec = { name: 'received.bin', type: TYPE_FILE, size: u8.length, blob: new Blob([u8]) };
+    showErr(t('noHeaderNote'));
+  }
+  lastRec = rec;
+  renderResult(rec);
+  saveToDB(rec);
+  setScanState(false);
+  setMeta('recvDone', { name: rec.name, size: fmtSize(rec.size) });
+}
+
+function renderResult(rec) {
+  resultEl.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const tp = document.createElement('div');
+  tp.className = 'type';
+  tp.textContent = typeLabel(rec.type);
+  const n = document.createElement('div');
+  n.className = 'name';
+  n.textContent = rec.name;
+  const s = document.createElement('div');
+  s.className = 'size';
+  s.textContent = fmtSize(rec.size);
+  card.appendChild(tp); card.appendChild(n); card.appendChild(s);
+
+  const url = URL.createObjectURL(rec.blob);
+
+  if (rec.type === TYPE_TEXT) {
+    const pre = document.createElement('pre');
+    rec.blob.text().then((txt) => { pre.textContent = txt; }).catch(() => { pre.textContent = t('decodeFail'); });
+    card.appendChild(pre);
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    const copy = document.createElement('button');
+    copy.textContent = t('copyText');
+    copy.addEventListener('click', () => {
+      rec.blob.text().then((txt) => {
+        (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject(new Error('no clipboard')))
+          .then(() => { copy.textContent = t('copied'); })
+          .catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = txt; document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); copy.textContent = t('copied'); } catch (e) { copy.textContent = t('copyFail'); }
+            document.body.removeChild(ta);
+          });
+      });
+    });
+    acts.appendChild(copy);
+    card.appendChild(acts);
+  } else if (rec.type === TYPE_IMAGE) {
+    const img = document.createElement('img');
+    img.className = 'preview';
+    img.src = url;
+    card.appendChild(img);
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    const dl = document.createElement('a');
+    dl.className = 'btn';
+    dl.href = url;
+    dl.download = rec.name;
+    dl.textContent = t('saveImage');
+    acts.appendChild(dl);
+    card.appendChild(acts);
+  } else {
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    const dl = document.createElement('a');
+    dl.className = 'btn primary';
+    dl.href = url;
+    dl.download = rec.name;
+    dl.textContent = t('saveFile');
+    acts.appendChild(dl);
+    card.appendChild(acts);
+  }
+  resultEl.appendChild(card);
+}
+
+/* ---------- IndexedDB 历史记录 ---------- */
+let db = null;
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('ctxfer', 1);
+    r.onupgradeneeded = (e) => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('items')) {
+        d.createObjectStore('items', { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    r.onsuccess = (e) => res(e.target.result);
+    r.onerror = (e) => rej(e.target.error);
+  });
+}
+async function saveToDB(rec) {
+  try {
+    if (!db) db = await openDB();
+    const tx = db.transaction('items', 'readwrite');
+    tx.objectStore('items').add({ name: rec.name, type: rec.type, size: rec.size, time: Date.now(), blob: rec.blob });
+  } catch (e) { console.warn('IndexedDB 保存失败（可能处于隐私模式）:', e); }
+  refreshList();
+}
+async function refreshList() {
+  try {
+    if (!db) db = await openDB();
+    const all = await new Promise((res, rej) => {
+      const r = db.transaction('items', 'readonly').objectStore('items').getAll();
+      r.onsuccess = () => res(r.result || []);
+      r.onerror = () => rej(r.error);
+    });
+    historyList.innerHTML = '';
+    const sorted = all.slice().sort((a, b) => (b.time || 0) - (a.time || 0));
+    for (const it of sorted) {
+      const li = document.createElement('li');
+      const n = document.createElement('span');
+      n.className = 'h-name';
+      n.textContent = it.name;
+      const m = document.createElement('span');
+      m.className = 'h-meta';
+      m.textContent = typeLabel(it.type) + ' · ' + fmtSize(it.size) + ' · ' + fmtTime(it.time);
+      const dl = document.createElement('a');
+      dl.className = 'btn';
+      dl.href = URL.createObjectURL(it.blob);
+      dl.download = it.name;
+      dl.textContent = t('download');
+      const del = document.createElement('button');
+      del.textContent = t('delete');
+      del.addEventListener('click', () => {
+        const tx = db.transaction('items', 'readwrite');
+        tx.objectStore('items').delete(it.id);
+        refreshList();
+      });
+      li.appendChild(n); li.appendChild(m); li.appendChild(dl); li.appendChild(del);
+      historyList.appendChild(li);
+    }
+  } catch (e) { console.warn('读取历史失败:', e); }
+}
+
+/* ---------- 解码器初始化 ---------- */
+Cimbar.onRuntimeInitialized = () => {
+  try {
+    decoder = new Decoder(Cimbar, video, scanCanvas, absUrl('./index.wasm'), absUrl('./worker.js'), {
+      onInitialized: () => {
+        btnScan.disabled = false;
+        setMeta('readyMeta');
+      },
+      onValidate: (ok) => {
+        setAlign(ok ? 'alignOk' : 'alignBad', ok);
+      },
+      onProgress: (p) => {
+        const v = Math.min(100, Math.max(0, Number(p) || 0));
+        progressBar.style.width = v + '%';
+        setMeta('progressMeta', { p: v.toFixed(1) });
+      },
+      onLoadedVideoMetadata: ({ width, height }) => {
+        setMeta('camOnMeta', { w: width, h: height });
+      },
+      onSuccess: handleSuccess,
+      onError: (e) => {
+        setScanState(false);
+        showErr(t('camErr', { msg: (e && e.message ? e.message : e) }));
+      },
+      onDecodeError: (code) => {
+        showErr(t('decodeErr', { code: code }));
+      },
+    });
+    // 移动端调优：1280×720 采集、更快抓帧
+    try {
+      decoder.mediaConfig.width = { ideal: 1280 };
+      decoder.mediaConfig.height = { ideal: 720 };
+      decoder.mediaConfig.frameRate = { ideal: 30 };
+      decoder.interval = 40;
+    } catch (e) { /* 使用库默认值 */ }
+  } catch (e) {
+    showErr(t('initFail') + ': ' + e);
+  }
+};
+initCimbar(Cimbar, absUrl('./index.wasm'));
+setTimeout(() => {
+  if (!decoder) {
+    showErr(t('initTimeout'));
+    btnScan.disabled = true;
+  }
+}, 12000);
+
+/* ---------- 扫描控制 ---------- */
+function setScanState(on) {
+  scanning = on;
+  btnScan.disabled = on || !decoder;
+  btnStop.disabled = !on;
+  btnScan.textContent = on ? t('btnScanning') : (resultEl.children.length ? t('btnScanAgain') : t('btnScan'));
+}
+btnScan.addEventListener('click', () => {
+  if (!decoder || scanning) return;
+  hideErr();
+  progressBar.style.width = '0%';
+  resultEl.innerHTML = '';
+  lastRec = null;
+  try { decoder.startScan(); setScanState(true); }
+  catch (e) { showErr(t('scanStartFail') + ': ' + e); }
+});
+btnStop.addEventListener('click', () => {
+  try { decoder.stopScan(); } catch (e) {}
+  setScanState(false);
+  setMeta('stopped');
+});
+
+/* ---------- 静态图片解码（测试/截图接收） ---------- */
+document.getElementById('imgFile').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f || !decoder) return;
+  hideErr();
+  resultEl.innerHTML = '';
+  lastRec = null;
+  setMeta('imgDecoding');
+  decoder.decodeImage(f)
+    .then(() => { setMeta('imgDecoded'); })
+    .catch((err) => { showErr(t('imgDecodeFail') + ': ' + (err && err.message ? err.message : err)); });
+  e.target.value = '';
+});
+
+/* ---------- 语言切换时刷新动态文本 ---------- */
+window.__onLangChange = () => {
+  if (alignKey) setAlign(alignKey, alignOk);
+  if (metaKey) setMeta(metaKey, metaVars);
+  btnScan.textContent = scanning ? t('btnScanning') : (resultEl.children.length ? t('btnScanAgain') : t('btnScan'));
+  if (lastRec) renderResult(lastRec);
+  refreshList();
+};
+
+/* ---------- 初始状态 ---------- */
+setMeta('metaIdle');
+setAlign('alignIdle', null);
+if (typeof window.__onLangChange === 'function') window.__onLangChange();
+
+/* ---------- PWA ---------- */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+refreshList();
+</script>
+</body>
+</html>
