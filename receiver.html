@@ -35,11 +35,17 @@
   }
   #align.ok { background: rgba(47,125,79,.35); color: #7ee2a0; }
   #align.bad { background: rgba(200,60,50,.35); color: #ff9d94; }
-  /* 中心取景框：解码只取画面中心 72% 区域放大，QR 需大致落在框内 */
+  /* 目标取景框：实测解码甜点区是"QR 约占画面宽度 55-62%"。但方形 QR 在 16:9 画面里
+     高度 = 宽度，超过画面高度（1280x720 下 >720px = 占宽 >56.25%）会被上下裁切导致定位失败
+     （实测 55% 可解、58% 裁切失败）。因此框宽取 55%，引导用户把 QR 对进框内。 */
   #frame {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    width: 72%; aspect-ratio: 1/1; border: 2px dashed rgba(255,255,255,.35);
+    width: 55%; aspect-ratio: 1/1; border: 2px dashed rgba(255,255,255,.4);
     border-radius: 8px; box-shadow: 0 0 0 4000px rgba(0,0,0,.18);
+  }
+  #frame::after {
+    content: attr(data-hint); position: absolute; left: 50%; bottom: -34px; transform: translateX(-50%);
+    font-size: 12px; color: rgba(255,255,255,.75); white-space: nowrap; pointer-events: none;
   }
   #progressWrap { height: 6px; background: #1a1a1a; border-radius: 3px; margin-top: 8px; overflow: hidden; }
   #progressBar { height: 100%; width: 0; background: #ff6600; transition: width .15s; }
@@ -148,6 +154,7 @@
       alignIdle: 'Not scanning yet',
       alignOk: 'Aligned — keep it steady',
       alignBad: 'Not aligned — adjust angle / distance',
+      frameHint: 'Fit the QR inside this box (~55% of screen — bigger overflows the frame)',
       metaIdle: 'Waiting…',
       btnScan: 'Start Scan',
       btnScanning: 'Scanning…',
@@ -171,7 +178,7 @@
       readyMeta: 'Ready: tap "Start Scan", point the camera at the animation on screen.',
       progressMeta: 'Decoding… {p}%',
       camOnMeta: 'Camera on: {w}×{h}\nPoint at the encoded animation',
-      noProgressHint: 'No frames recognized for a while. Keep the animation inside the dashed frame; on the sender: drag the QR away from glare, enlarge it, or raise error tolerance (ECC).',
+      noProgressHint: 'No frames recognized for a while. Move the animation inside the dashed frame (~55% of screen — bigger overflows the frame and also fails). On the sender: drag the QR away from glare, enlarge it, or raise error tolerance (ECC).',
       ecc: 'Error Tolerance', eccStd: 'Standard', eccHigh: 'High', eccUltra: 'Ultra',
       eccNote: 'Must match the sender\u2019s Error Tolerance setting.',
       camErr: 'Camera error: {msg}. Allow camera permission in the browser and open via HTTPS/localhost.',
@@ -193,8 +200,9 @@
       home: '首页',
       tip: '可添加到主屏幕当作 App 使用',
       alignIdle: '尚未开始扫描',
-      alignOk: '已对齐，请保持稳定',
-      alignBad: '未对齐，请调整角度/距离',
+      alignOk: '已对齐，請保持穩定',
+      alignBad: '未對齊，請調整角度/距離',
+      frameHint: '請把 QR 調整到框內（約佔畫面五成半）',
       metaIdle: '就绪等待中…',
       btnScan: '开始扫描',
       btnScanning: '扫描中…',
@@ -218,7 +226,7 @@
       readyMeta: '就绪：点击"开始扫描"，将手机摄像头对准电脑屏幕上的编码动画。',
       progressMeta: '解码中… 进度 {p}%',
       camOnMeta: '摄像头已开启：{w}×{h}\n请对准屏幕上的编码画面',
-      noProgressHint: '長時間沒識別到畫面。請把動畫保持在虛線框內；若仍無效，請到發送端：①把 QR 拖離反光處 ②調大 QR ③提高容錯率（ECC）。',
+      noProgressHint: '長時間沒識別到畫面。請把動畫調整到虛線框內（約佔畫面五成半；太大超出框也會掃不到）。若仍無效，請到發送端：①把 QR 拖離反光處 ②調大 QR ③提高容錯率（ECC）。',
       ecc: '容錯率', eccStd: '標準', eccHigh: '高', eccUltra: '最高',
       eccNote: '必須與發送端的容錯率設定一致。',
       camErr: '摄像头错误：{msg}。请在浏览器地址栏允许摄像头权限，并使用 HTTPS/localhost 打开。',
@@ -257,6 +265,8 @@
       el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
     });
     document.getElementById('langBtn').textContent = (lang === 'en') ? '中文' : 'English';
+    var fr = document.getElementById('frame');
+    if (fr) fr.setAttribute('data-hint', t('frameHint'));
     try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
   }
   document.getElementById('langBtn').addEventListener('click', function () {
