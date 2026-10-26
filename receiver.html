@@ -336,11 +336,15 @@ function handleSuccess(data) {
   }
   let rec;
   if (parsed) {
+    // 发送端对小载荷做了 padding（≥1KB 保证帧可解），v2 meta 的 origSize 为真实长度，
+    // 必须按 origSize 截断，否则文本/图片会混入填充字节。
+    const raw = parsed.payload;
+    const effLen = (parsed.origSize && parsed.origSize > 0 && parsed.origSize < raw.length) ? parsed.origSize : raw.length;
     rec = {
       name: safeName(parsed.name),
       type: isValidType(parsed.type) ? parsed.type : TYPE_FILE,
-      size: parsed.payload.length,
-      blob: new Blob([parsed.payload], { type: TYPE_MIME[isValidType(parsed.type) ? parsed.type : 0] }),
+      size: effLen,
+      blob: new Blob([raw.slice(0, effLen)], { type: TYPE_MIME[isValidType(parsed.type) ? parsed.type : 0] }),
     };
   } else {
     // 兼容：旧版无 CTXF 头的原始数据流（如官方 cimbar.org）
@@ -624,9 +628,42 @@ function createMTDecoder(C) {
   let onData = null, onDecodeError = null;
   const api = {
     setCallbacks(cb) { onData = cb.onData || null; onDecodeError = cb.onDecodeError || null; },
+    lastErr: 0, lastTpls: 0,
     getProgress() { const p = C._get_common_progress(); return p === 0 ? 1 : p; },
     rawProgress() { return C._get_common_progress(); },
     outEntries() { try { return C.FS.readdir(outputDir); } catch (e) { return ['ERR ' + e.message]; } },
+    // 调试对照：与 decodeFrame 同参数的"直调"，不吞错，返回各步状态
+    decodeDirect(imgData) {
+      const data = imgData.data;
+      const Q = C._malloc(data.length);
+      const Z = new Uint8Array(C.HEAPU8.buffer, Q, data.length);
+      for (let i = 0; i < data.length; i += 4) {
+        Z[i] = data[i + 2]; Z[i + 1] = data[i + 1]; Z[i + 2] = data[i]; Z[i + 3] = data[i + 3];
+      }
+      const err = C._decodeImage(Q, imgData.width, imgData.height, outputHeap, numBytes);
+      C._free(Q);
+      let tpls = [];
+      try {
+        const names = C.FS.readdir(templateDir);
+        for (let i = 0; i < names.length; i++) {
+          const n = names[i];
+          if (n !== '.' && n !== '..') tpls.push(C.FS.readFile(templateDir + n).length);
+        }
+      } catch (e) { return { err, tpls: 'FS-ERR ' + e.message, progress: -1 }; }
+      if (tpls.length) {
+        const names = C.FS.readdir(templateDir);
+        for (let i = 0; i < names.length; i++) {
+          const n = names[i];
+          if (n !== '.' && n !== '..') {
+            const t = C.FS.readFile(templateDir + n);
+            C.FS.writeFile(templatePtah, t);
+            C._write_frame_data(templateHeap);
+          }
+        }
+      }
+      const p = C._get_common_progress();
+      return { err: err, tpls: tpls, progress: p };
+    },
     decodeFrame(imgData) {
       const data = imgData.data;
       const Q = C._malloc(data.length);
@@ -642,18 +679,26 @@ function createMTDecoder(C) {
       try { err = C._decodeImage(Q, imgData.width, imgData.height, outputHeap, numBytes); }
       catch (e) { C._free(Q); if (onDecodeError) onDecodeError(-1); return; }
       C._free(Q);
-      if (err !== 0) { if (onDecodeError) onDecodeError(err); return; }
+      api.lastErr = err;
+      // 重要：err≠0 不代表帧无效。实测 qt-works 解码器对"识别成功但
+      // 无新块/帧重复"也返回非 0 错误码，此时模板目录可能仍有有效输出；
+      // 直接丢弃会永远收不到数据。因此一律先读取模板目录，有输出才写入。
       let files = [];
       const names = C.FS.readdir(templateDir);
       for (let i = 0; i < names.length; i++) {
         const n = names[i];
         if (n !== '.' && n !== '..') files.push(C.FS.readFile(templateDir + n));
       }
+      api.lastTpls = files.length;
       for (let i = 0; i < names.length; i++) {
         const n = names[i];
         if (n !== '.' && n !== '..') { try { C.FS.unlink(templateDir + n); } catch (e) {} }
       }
-      if (!files.length) return;
+      if (!files.length) {
+        // 模板目录为空且解码返回错误，才视为帧无效
+        if (err !== 0) { if (onDecodeError) onDecodeError(err); }
+        return;
+      }
       for (let i = 0; i < files.length; i++) {
         C.FS.writeFile(templatePtah, files[i]);
         C._write_frame_data(templateHeap);
@@ -851,6 +896,9 @@ window.__recv = {
   getProgress: () => (decoder ? decoder.getProgress() : 0),
   rawProgress: () => (decoder ? decoder.rawProgress() : -1),
   outEntries: () => (decoder ? decoder.outEntries() : []),
+  lastErr: () => (decoder ? decoder.lastErr : -1),
+  lastTpls: () => (decoder ? decoder.lastTpls : -1),
+  decodeDirect: (imgData) => { if (decoder) return decoder.decodeDirect(imgData); return null; },
   decodeStatic: (imgData) => { if (decoder) decoder.decodeFrame(imgData); },
 };
 </script>

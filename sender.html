@@ -348,7 +348,17 @@
     /* ---------- CTXF v2 封装（13B 头 + name + [meta 12B] + payload） ----------
        meta 仅文件分段时存在：seq LE32 + total LE32 + origSize LE32 */
     function buildTransfer(type, name, seq, total, origSize, payload) {
-      var hasMeta = (type === 0 && total > 1) ? 1 : 0;
+      // 小载荷 padding：实测 qt-works 解码器对 <1KB 的帧识别失败（块太少帧过稀，
+      // _decodeImage 返回错误、无模板输出）。将 payload 填充到至少 1024B，
+      // 并用 CTXF v2 meta 记录真实长度，接收端按 origSize 截断，padding 无副作用。
+      var MIN_PAD = 1024;
+      if (payload.length < MIN_PAD) {
+        var padded = new Uint8Array(MIN_PAD);
+        padded.set(payload, 0);
+        for (var i = payload.length; i < MIN_PAD; i++) padded[i] = 0xCC;
+        payload = padded;
+      }
+      var hasMeta = 1;   // 所有 v2 传输都带 meta（seq/total/origSize），接收端可精确截断
       var te = new TextEncoder('utf-8');
       var nameBytes = te.encode(String(name || 'untitled').slice(0, 200));
       var payloadLen = payload.length;
