@@ -35,6 +35,12 @@
   }
   #align.ok { background: rgba(47,125,79,.35); color: #7ee2a0; }
   #align.bad { background: rgba(200,60,50,.35); color: #ff9d94; }
+  /* 中心取景框：解码只取画面中心 72% 区域放大，QR 需大致落在框内 */
+  #frame {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 72%; aspect-ratio: 1/1; border: 2px dashed rgba(255,255,255,.35);
+    border-radius: 8px; box-shadow: 0 0 0 4000px rgba(0,0,0,.18);
+  }
   #progressWrap { height: 6px; background: #1a1a1a; border-radius: 3px; margin-top: 8px; overflow: hidden; }
   #progressBar { height: 100%; width: 0; background: #ff6600; transition: width .15s; }
   #meta { font-size: 12px; color: #888; margin-top: 6px; line-height: 1.6; }
@@ -98,6 +104,7 @@
   <canvas id="scan" hidden></canvas>
   <div id="overlay">
     <span id="align"></span>
+    <div id="frame"></div>
     <div id="progressWrap"><div id="progressBar"></div></div>
     <div id="meta"></div>
   </div>
@@ -108,6 +115,12 @@
   <button id="btnStop" disabled data-i18n="btnStop">停止</button>
   <label class="btn" for="imgFile"><span data-i18n="testImg">Decode Image (test)</span></label>
   <input type="file" id="imgFile" class="file-in" accept="image/*" hidden>
+  <label class="btn" for="ecc-sel"><span data-i18n="ecc">容错率</span></label>
+  <select id="ecc-sel" onchange="window.setECC(this.value)">
+    <option value="0" data-i18n="eccStd">标准</option>
+    <option value="32" data-i18n="eccHigh">高</option>
+    <option value="48" data-i18n="eccUltra">最高</option>
+  </select>
 </div>
 <div id="err"></div>
 
@@ -158,6 +171,9 @@
       readyMeta: 'Ready: tap "Start Scan", point the camera at the animation on screen.',
       progressMeta: 'Decoding… {p}%',
       camOnMeta: 'Camera on: {w}×{h}\nPoint at the encoded animation',
+      noProgressHint: 'No frames recognized for a while. Keep the animation inside the dashed frame; on the sender: drag the QR away from glare, enlarge it, or raise error tolerance (ECC).',
+      ecc: 'Error Tolerance', eccStd: 'Standard', eccHigh: 'High', eccUltra: 'Ultra',
+      eccNote: 'Must match the sender\u2019s Error Tolerance setting.',
       camErr: 'Camera error: {msg}. Allow camera permission in the browser and open via HTTPS/localhost.',
       decodeErr: 'Decode error (code {code}): unsteady frame or dropped frames — hold steady, avoid glare, rescan.',
       initFail: 'Decoder initialization failed',
@@ -202,6 +218,9 @@
       readyMeta: '就绪：点击"开始扫描"，将手机摄像头对准电脑屏幕上的编码动画。',
       progressMeta: '解码中… 进度 {p}%',
       camOnMeta: '摄像头已开启：{w}×{h}\n请对准屏幕上的编码画面',
+      noProgressHint: '長時間沒識別到畫面。請把動畫保持在虛線框內；若仍無效，請到發送端：①把 QR 拖離反光處 ②調大 QR ③提高容錯率（ECC）。',
+      ecc: '容錯率', eccStd: '標準', eccHigh: '高', eccUltra: '最高',
+      eccNote: '必須與發送端的容錯率設定一致。',
       camErr: '摄像头错误：{msg}。请在浏览器地址栏允许摄像头权限，并使用 HTTPS/localhost 打开。',
       decodeErr: '解码出错（代码 {code}）：画面不稳或帧丢失，请保持手机稳定、避免反光后重扫。',
       initFail: '解码器初始化失败',
@@ -276,6 +295,7 @@ const Cimbar = {};
 let decoder = null;
 let scanning = false;
 let streamRef = null, scanRaf = 0, lastDecodeAt = 0;
+let noDataSince = 0, noDataShown = false;   // 无进展提示计时
 let lastRec = null;          // 最近一次接收结果（语言切换时重绘）
 let metaKey = null, metaVars = null;
 let alignKey = null, alignOk = null;
@@ -345,6 +365,7 @@ function handleSuccess(data) {
       type: isValidType(parsed.type) ? parsed.type : TYPE_FILE,
       size: effLen,
       blob: new Blob([raw.slice(0, effLen)], { type: TYPE_MIME[isValidType(parsed.type) ? parsed.type : 0] }),
+      text: (isValidType(parsed.type) && parsed.type === TYPE_TEXT) ? new TextDecoder().decode(raw.slice(0, effLen)) : undefined,
     };
   } else {
     // 兼容：旧版无 CTXF 头的原始数据流（如官方 cimbar.org）
@@ -355,6 +376,7 @@ function handleSuccess(data) {
   renderResult(rec);
   saveToDB(rec);
   setScanState(false);
+  stopScan();   // 完成后关摄像头，避免继续扫描空帧
   setMeta('recvDone', { name: rec.name, size: fmtSize(rec.size) });
   rebuildDecoder();   // 完成一次传输后重建，支持连续接收下一个文件
 }
@@ -388,6 +410,7 @@ async function handleSegment(parsed) {
     refreshActiveTransfers();
     setMeta('segDone', { name, size: fmtSize(done.size), total: rec.total });
     setScanState(false);
+    stopScan();   // 完成后关摄像头，避免继续扫描空帧
     rebuildDecoder();   // 完成一次传输后重建，支持连续接收下一个文件
   } else {
     setMeta('segProgress', { name, got, total: rec.total });
@@ -414,7 +437,7 @@ function renderResult(rec) {
 
   if (rec.type === TYPE_TEXT) {
     const pre = document.createElement('pre');
-    rec.blob.text().then((txt) => { pre.textContent = txt; }).catch(() => { pre.textContent = t('decodeFail'); });
+    pre.textContent = (rec.text !== undefined && rec.text !== '') ? rec.text : t('decodeFail');
     card.appendChild(pre);
     const acts = document.createElement('div');
     acts.className = 'acts';
@@ -626,10 +649,17 @@ function createMTDecoder(C) {
     try { C._init_sink(outputHeap, numBytes); } catch (e) {}
   }
   let onData = null, onDecodeError = null;
+  let everGotData = false;   // 是否收到过有效块（区分"未开始 0%"与"完成 100%"）
   const api = {
     setCallbacks(cb) { onData = cb.onData || null; onDecodeError = cb.onDecodeError || null; },
     lastErr: 0, lastTpls: 0,
-    getProgress() { const p = C._get_common_progress(); return p === 0 ? 1 : p; },
+    getProgress() {
+      const p = C._get_common_progress();
+      // rawProgress=0 可能是"完成"也可能是"从未收到任何块"；
+      // 只有收到过有效块后才算 100%，否则显示 0%（避免"进度100%但没结果"的误导）。
+      if (p === 0) return everGotData ? 1 : 0;
+      return p;
+    },
     rawProgress() { return C._get_common_progress(); },
     outEntries() { try { return C.FS.readdir(outputDir); } catch (e) { return ['ERR ' + e.message]; } },
     // 调试对照：与 decodeFrame 同参数的"直调"，不吞错，返回各步状态
@@ -660,6 +690,7 @@ function createMTDecoder(C) {
             C._write_frame_data(templateHeap);
           }
         }
+        everGotData = true;
       }
       const p = C._get_common_progress();
       return { err: err, tpls: tpls, progress: p };
@@ -703,6 +734,7 @@ function createMTDecoder(C) {
         C.FS.writeFile(templatePtah, files[i]);
         C._write_frame_data(templateHeap);
       }
+      everGotData = true;   // 收到过有效块：进度归零才可判为"完成 100%"
       const p = C._get_common_progress();
       if (p === 0) {
         const entries = C.FS.readdir(outputDir);
@@ -724,8 +756,11 @@ function bindDecoder(d) {
   d.setCallbacks({
     onData: (data) => handleSuccess(data),
     onDecodeError: (code) => {
-      setAlign('alignBad', false);
-      if (code !== -1) showErr(t('decodeErr', { code: code }));
+      // 扫码中"帧无法识别/无新块"高频出现（画面不稳、非帧时刻、重复帧），
+      // 逐帧弹错只会刷屏干扰。这里不再 showErr；仅当从未收到任何块时才
+      // 维持"未对齐"提示，收到块后保持对齐状态不再闪烁。
+      const pr = decoder.getProgress();
+      if (pr <= 0) setAlign('alignBad', false);
     },
   });
 }
@@ -746,6 +781,23 @@ function rebuildDecoder() {
   decoder = createMTDecoder(Cimbar);
   bindDecoder(decoder);
 }
+
+/* 容错率：调用 wasm configure 切换 ECC（解码 chunkSize 跟随），
+   必须与发送端一致；0 = 引擎默认（configure 传 150 触发默认约 16B ECC）。
+   切换后重建解码器使新参数生效。 */
+window.setECC = (v) => {
+  v = parseInt(v, 10) || 0;
+  try {
+    if (Cimbar._configure) Cimbar._configure(2, (v > 0 ? v : 150), -1, 0);
+  } catch (e) {}
+  try {
+    const sel = document.getElementById('ecc-sel');
+    if (sel) sel.value = String(v);
+  } catch (e) {}
+  if (decoder) { try { decoder.destroy && decoder.destroy(); } catch (e) {} }
+  rebuildDecoder();
+  setMeta('eccNote');
+};
 
 /* ---------- 解码器初始化（主线程，无需 Worker） ---------- */
 Cimbar.onRuntimeInitialized = () => {
@@ -778,16 +830,27 @@ function scanLoop(ts) {
   scanRaf = requestAnimationFrame(scanLoop);
   if (!decoder || !video.videoWidth) return;
   const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
-  if (scanCanvas.width !== video.videoWidth) scanCanvas.width = video.videoWidth;
-  if (scanCanvas.height !== video.videoHeight) scanCanvas.height = video.videoHeight;
+  // 整图解码：实测 qt-works 解码器对"QR 占画面一部分"的帧也能自适应定位解码，
+  // 中心裁剪放大反而引入模糊导致失败（模拟真机 1280x720 画面 QR 居中可解）。
+  // 远距离/反光时请用户把 QR 调大并居中（发送端已支持拖动/缩放）。
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (scanCanvas.width !== vw) scanCanvas.width = vw;
+  if (scanCanvas.height !== vh) scanCanvas.height = vh;
   if (ts - lastDecodeAt > 45) {   // 约 20fps 解码节流，避免低端机满载
     lastDecodeAt = ts;
     try {
-      ctx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
-      decoder.decodeFrame(ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height));
+      ctx.drawImage(video, 0, 0, vw, vh);
+      decoder.decodeFrame(ctx.getImageData(0, 0, vw, vh));
       const pr = decoder.getProgress();
       progressBar.style.width = Math.round(pr * 100) + '%';
-      if (pr > 0) setAlign('alignOk', true);
+      if (pr > 0) {
+        setAlign('alignOk', true);
+        noDataSince = 0;
+      } else if (noDataSince && Date.now() - noDataSince > 6000 && !noDataShown) {
+        // 6 秒无任何进展：提示用户去发送端调整（单向沟通变通协议）
+        noDataShown = true;
+        setMeta('noProgressHint');
+      }
       setMeta('progressMeta', { p: Math.round(pr * 100) });
     } catch (e) { /* 单帧失败忽略 */ }
   }
@@ -812,6 +875,8 @@ async function startScan() {
     video.play();
     setMeta('camOnMeta', { w: video.videoWidth, h: video.videoHeight });
     lastDecodeAt = 0;
+    noDataSince = Date.now();
+    noDataShown = false;
     scanRaf = requestAnimationFrame(scanLoop);
   } catch (e) {
     showErr(t('camErr', { msg: (e && e.message ? e.message : e) }));
