@@ -9,137 +9,182 @@
 <link rel="apple-touch-icon" href="./icon-180.png">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     background: #000; color: #eee;
     font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    max-width: 640px; margin: 0 auto; padding: 12px;
+    overflow: hidden;
   }
-  header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-  header h1 { font-size: 17px; color: #ff6600; }
-  header a { color: #777; font-size: 13px; text-decoration: none; }
-  .tip { font-size: 12px; color: #666; }
-  #langBtn {
-    background: #111; color: #ff6600; border: 1px solid #333; border-radius: 6px;
-    padding: 4px 10px; font-size: 12px; cursor: pointer;
-  }
-  #langBtn:hover { border-color: #ff6600; }
-  #stage { position: relative; border: 1px solid #222; border-radius: 12px; overflow: hidden; background: #000; }
-  #video { width: 100%; display: block; background: #000; min-height: 180px; }
-  #overlay {
-    position: absolute; inset: 0; display: flex; flex-direction: column;
-    justify-content: flex-end; padding: 10px; pointer-events: none;
-  }
+  /* 全屏摄像头画面（参考官方 decoder 架构：video 铺满全屏，控件悬浮不遮挡画面） */
+  #stage { position: fixed; inset: 0; z-index: 0; background: #000; }
+  #video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+  #scan { display: none; }
+  /* 取景层：取景框 + 状态 + 进度，全部悬浮于视频之上 */
+  #overlay { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
   #align {
-    align-self: flex-start; font-size: 12px; border-radius: 6px; padding: 4px 10px;
-    background: rgba(255,255,255,.08); color: #aaa;
+    position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; border-radius: 6px; padding: 4px 10px;
+    background: rgba(0,0,0,.55); color: #aaa; white-space: nowrap;
   }
-  #align.ok { background: rgba(47,125,79,.35); color: #7ee2a0; }
-  #align.bad { background: rgba(200,60,50,.35); color: #ff9d94; }
+  #align.ok { background: rgba(47,125,79,.5); color: #7ee2a0; }
+  #align.bad { background: rgba(200,60,50,.5); color: #ff9d94; }
   /* 目标取景框：实测解码甜点区是"QR 约占画面宽度 55-62%"。但方形 QR 在 16:9 画面里
      高度 = 宽度，超过画面高度（1280x720 下 >720px = 占宽 >56.25%）会被上下裁切导致定位失败
      （实测 55% 可解、58% 裁切失败）。因此框宽取 55%，引导用户把 QR 对进框内。 */
   #frame {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
     width: 55%; aspect-ratio: 1/1; border: 2px dashed rgba(255,255,255,.4);
-    border-radius: 8px; box-shadow: 0 0 0 4000px rgba(0,0,0,.18);
+    border-radius: 8px; box-shadow: 0 0 0 4000px rgba(0,0,0,.15);
   }
   #frame::after {
     content: attr(data-hint); position: absolute; left: 50%; bottom: -34px; transform: translateX(-50%);
-    font-size: 12px; color: rgba(255,255,255,.75); white-space: nowrap; pointer-events: none;
+    font-size: 12px; color: rgba(255,255,255,.8); white-space: nowrap; pointer-events: none;
+    text-shadow: 0 1px 2px #000;
   }
-  #progressWrap { height: 6px; background: #1a1a1a; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  #progressWrap {
+    position: absolute; left: 10%; right: 10%; bottom: 100px; height: 6px;
+    background: rgba(26,26,26,.7); border-radius: 3px; overflow: hidden;
+  }
   #progressBar { height: 100%; width: 0; background: #ff6600; transition: width .15s; }
-  #meta { font-size: 12px; color: #888; margin-top: 6px; line-height: 1.6; }
-  #controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; align-items: center; }
+  #meta {
+    position: absolute; left: 8%; right: 8%; bottom: 112px;
+    font-size: 12px; color: #ccc; line-height: 1.5; text-align: center;
+    text-shadow: 0 1px 2px #000;
+  }
+  /* 顶部半透明控制条 */
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; padding-top: calc(10px + env(safe-area-inset-top));
+    background: rgba(0,0,0,.5); backdrop-filter: blur(4px);
+  }
+  #topbar a { color: #999; font-size: 13px; text-decoration: none; }
+  #topbar .title { color: #ff6600; font-size: 14px; font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #topbar .tip { font-size: 11px; color: #888; display: none; }
+  #langBtn {
+    background: rgba(17,17,17,.8); color: #ff6600; border: 1px solid #333; border-radius: 6px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer;
+  }
+  #langBtn:hover { border-color: #ff6600; }
+  /* 底部半透明控制条 */
+  #controls {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  }
   button, .btn, label.btn {
-    background: #111; color: #ff6600; border: 1px solid #333; border-radius: 8px;
-    padding: 10px 16px; font-size: 14px; cursor: pointer; display: inline-block;
+    background: rgba(17,17,17,.9); color: #ff6600; border: 1px solid #333; border-radius: 8px;
+    padding: 10px 14px; font-size: 14px; cursor: pointer; display: inline-block;
   }
   button:hover, .btn:hover, label.btn:hover { border-color: #ff6600; }
   button:disabled { opacity: .4; cursor: not-allowed; }
   button.primary { background: #ff6600; color: #000; border-color: #ff6600; font-weight: 700; }
   .file-in { position: absolute; left: -9999px; }
-  #result { margin: 12px 0; }
+  #controls select {
+    background: rgba(17,17,17,.9); color: #ff6600; border: 1px solid #333; border-radius: 8px;
+    padding: 9px 8px; font-size: 14px; max-width: 130px;
+  }
+  /* 结果：底部悬浮卡片（不挡取景） */
+  #result {
+    position: fixed; left: 10px; right: 10px; bottom: 66px; z-index: 30;
+    max-height: 38%; overflow: auto; pointer-events: auto;
+  }
   .card {
-    background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 10px; padding: 12px; margin-bottom: 10px;
+    background: rgba(13,13,13,.92); border: 1px solid #2a2a2a; border-radius: 10px;
+    padding: 12px; margin-bottom: 10px;
   }
   .card .type { font-size: 12px; color: #ff6600; font-weight: 700; }
   .card .name { font-size: 14px; margin: 4px 0; word-break: break-all; }
   .card .size { font-size: 12px; color: #888; }
   .card .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-  .card img.preview { max-width: 100%; max-height: 260px; border-radius: 8px; display: block; margin: 8px 0; }
+  .card img.preview { max-width: 100%; max-height: 200px; border-radius: 8px; display: block; margin: 8px 0; }
   .card pre {
     background: #000; border: 1px solid #222; border-radius: 6px; padding: 8px;
-    font-size: 13px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+    font-size: 13px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-all;
     color: #ddd; margin: 8px 0;
   }
-  #history h2 { font-size: 14px; color: #ff6600; margin: 14px 0 8px; }
-  #historyList { list-style: none; }
-  #historyList li {
+  /* 错误提示：顶部悬浮 */
+  #err {
+    position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 25;
+    color: #ff9d94; font-size: 13px; padding: 6px 12px; border-radius: 8px;
+    background: rgba(40,10,10,.9); display: none; max-width: 90%;
+  }
+  /* 历史记录：右侧抽屉 */
+  #drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(88vw, 420px);
+    z-index: 40; background: rgba(8,8,8,.97); padding: 16px;
+    padding-top: calc(16px + env(safe-area-inset-top));
+    transform: translateX(105%); transition: transform .25s; overflow: auto;
+  }
+  #drawer.open { transform: none; }
+  #drawer .drawer-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  #drawer .drawer-head span { flex: 1; color: #ff6600; font-weight: 700; font-size: 15px; }
+  #drawer h2 { font-size: 14px; color: #ff6600; margin: 14px 0 8px; }
+  #drawer ul { list-style: none; }
+  #drawer li {
     display: flex; align-items: center; gap: 8px;
     background: #0d0d0d; border: 1px solid #222; border-radius: 8px;
     padding: 8px 10px; margin-bottom: 6px; font-size: 13px; flex-wrap: wrap;
   }
-  #historyList .h-name { flex: 1; min-width: 120px; word-break: break-all; }
-  #historyList .h-meta { color: #666; font-size: 12px; }
-  #historyList a, #historyList button { font-size: 12px; padding: 4px 10px; }
-  #err { color: #ff9d94; font-size: 13px; margin-top: 6px; display: none; }
-  #activeTransfers h2 { font-size: 14px; color: #ff6600; margin: 14px 0 8px; }
-  #activeList { list-style: none; }
-  #activeList li {
-    background: #0d0d0d; border: 1px solid #222; border-radius: 8px;
-    padding: 8px 10px; margin-bottom: 6px; font-size: 13px;
-  }
-  #activeList .h-name { display: block; word-break: break-all; margin-bottom: 2px; }
-  #activeList .h-meta { color: #888; font-size: 12px; }
+  #drawer .h-name { flex: 1; min-width: 100px; word-break: break-all; }
+  #drawer .h-meta { color: #666; font-size: 12px; }
+  #drawer a, #drawer button { font-size: 12px; padding: 4px 10px; }
   .minibar { height: 4px; background: #1a1a1a; border-radius: 2px; margin-top: 6px; overflow: hidden; }
   .minibar-fill { height: 100%; background: #ff6600; transition: width .3s; }
 </style>
 </head>
 <body>
 
-<header>
-  <a href="./index.html" data-i18n="home">首页</a>
-  <h1 data-i18n="title">视觉传输 · 接收端</h1>
-  <span class="tip" data-i18n="tip">可添加到主屏幕当作 App 使用</span>
-  <button id="langBtn">中文</button>
-</header>
-
 <div id="stage">
   <video id="video" playsinline webkit-playsinline muted autoplay></video>
   <canvas id="scan" hidden></canvas>
-  <div id="overlay">
-    <span id="align"></span>
-    <div id="frame"></div>
-    <div id="progressWrap"><div id="progressBar"></div></div>
-    <div id="meta"></div>
-  </div>
 </div>
+
+<div id="overlay">
+  <span id="align"></span>
+  <div id="frame"></div>
+  <div id="progressWrap"><div id="progressBar"></div></div>
+  <div id="meta"></div>
+</div>
+
+<header id="topbar">
+  <a href="./index.html" data-i18n="home">Home</a>
+  <span class="title" data-i18n="title">Visual Transfer · Receiver</span>
+  <span class="tip" data-i18n="tip">Add to Home Screen to use as an app</span>
+  <button id="langBtn">中文</button>
+</header>
 
 <div id="controls">
-  <button id="btnScan" class="primary" disabled data-i18n="btnScan">开始扫描</button>
-  <button id="btnStop" disabled data-i18n="btnStop">停止</button>
+  <button id="btnScan" class="primary" disabled data-i18n="btnScan">Start Scan</button>
+  <button id="btnStop" disabled data-i18n="btnStop">Stop</button>
   <label class="btn" for="imgFile"><span data-i18n="testImg">Decode Image (test)</span></label>
   <input type="file" id="imgFile" class="file-in" accept="image/*" hidden>
-  <label class="btn" for="ecc-sel"><span data-i18n="ecc">容错率</span></label>
+  <label class="btn" for="ecc-sel"><span data-i18n="ecc">Error Tolerance</span></label>
   <select id="ecc-sel" onchange="window.setECC(this.value)">
-    <option value="0" data-i18n="eccStd">标准</option>
-    <option value="32" data-i18n="eccHigh">高</option>
-    <option value="48" data-i18n="eccUltra">最高</option>
+    <option value="0" data-i18n="eccStd">Standard</option>
+    <option value="32" data-i18n="eccHigh">High</option>
+    <option value="48" data-i18n="eccUltra">Ultra</option>
   </select>
+  <button id="btnHistory" data-i18n="historyTitle">Received</button>
 </div>
+
 <div id="err"></div>
-
-<div id="activeTransfers" hidden>
-  <h2 data-i18n="transfersTitle">In-progress transfers</h2>
-  <ul id="activeList"></ul>
-</div>
-
 <div id="result"></div>
 
-<div id="history">
-  <h2 data-i18n="historyTitle">已接收记录</h2>
-  <ul id="historyList"></ul>
+<div id="drawer">
+  <div class="drawer-head">
+    <span data-i18n="historyTitle">Received</span>
+    <button id="btnDrawerClose">✕</button>
+  </div>
+  <div id="activeTransfers">
+    <h2 data-i18n="transfersTitle">In-progress transfers</h2>
+    <ul id="activeList"></ul>
+  </div>
+  <div id="history">
+    <h2 data-i18n="historyTitle">Received history</h2>
+    <ul id="historyList"></ul>
+  </div>
 </div>
 
 <script>
@@ -912,6 +957,21 @@ btnStop.addEventListener('click', () => {
   setScanState(false);
   setMeta('stopped');
 });
+
+/* 历史记录抽屉开关 */
+const drawerEl = document.getElementById('drawer');
+const btnHistoryEl = document.getElementById('btnHistory');
+const btnDrawerCloseEl = document.getElementById('btnDrawerClose');
+if (btnHistoryEl) {
+  btnHistoryEl.addEventListener('click', () => {
+    drawerEl.classList.add('open');
+  });
+}
+if (btnDrawerCloseEl) {
+  btnDrawerCloseEl.addEventListener('click', () => {
+    drawerEl.classList.remove('open');
+  });
+}
 
 /* ---------- 静态图片解码（测试/截图接收） ---------- */
 document.getElementById('imgFile').addEventListener('change', (e) => {
