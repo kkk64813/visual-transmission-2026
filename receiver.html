@@ -72,6 +72,16 @@
   #historyList .h-meta { color: #666; font-size: 12px; }
   #historyList a, #historyList button { font-size: 12px; padding: 4px 10px; }
   #err { color: #ff9d94; font-size: 13px; margin-top: 6px; display: none; }
+  #activeTransfers h2 { font-size: 14px; color: #ff6600; margin: 14px 0 8px; }
+  #activeList { list-style: none; }
+  #activeList li {
+    background: #0d0d0d; border: 1px solid #222; border-radius: 8px;
+    padding: 8px 10px; margin-bottom: 6px; font-size: 13px;
+  }
+  #activeList .h-name { display: block; word-break: break-all; margin-bottom: 2px; }
+  #activeList .h-meta { color: #888; font-size: 12px; }
+  .minibar { height: 4px; background: #1a1a1a; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .minibar-fill { height: 100%; background: #ff6600; transition: width .3s; }
 </style>
 </head>
 <body>
@@ -96,9 +106,15 @@
 <div id="controls">
   <button id="btnScan" class="primary" disabled data-i18n="btnScan">开始扫描</button>
   <button id="btnStop" disabled data-i18n="btnStop">停止</button>
-  <label class="btn" data-i18n="testImg">解码图片(测试)<input type="file" id="imgFile" class="file-in" accept="image/*"></label>
+  <label class="btn" for="imgFile"><span data-i18n="testImg">Decode Image (test)</span></label>
+  <input type="file" id="imgFile" class="file-in" accept="image/*" hidden>
 </div>
 <div id="err"></div>
+
+<div id="activeTransfers" hidden>
+  <h2 data-i18n="transfersTitle">In-progress transfers</h2>
+  <ul id="activeList"></ul>
+</div>
 
 <div id="result"></div>
 
@@ -150,7 +166,11 @@
       imgDecoding: 'Decoding image…',
       imgDecoded: 'Image decoded (see result below).',
       imgDecodeFail: 'Image decode failed',
-      stopped: 'Stopped.'
+      stopped: 'Stopped.',
+      transfersTitle: 'In-progress transfers',
+      segProgress: '{got} / {total} segments',
+      segDone: 'Complete: {name} ({size}) · {total} segments',
+      segStoreFail: 'Could not save segment (private mode / storage full?)'
     },
     zh: {
       title: '视觉传输 · 接收端',
@@ -190,7 +210,11 @@
       imgDecoding: '正在解码图片…',
       imgDecoded: '图片解码完成（见下方结果）。',
       imgDecodeFail: '图片解码失败',
-      stopped: '已停止。'
+      stopped: '已停止。',
+      transfersTitle: '接收中的传输',
+      segProgress: '已收 {got} / {total} 段',
+      segDone: '全部接收完成：{name}（{size}）· {total} 段',
+      segStoreFail: '无法保存数据段（可能处于隐私模式或存储已满）'
     }
   };
   var lang = 'en';
@@ -200,6 +224,7 @@
     if (vars) { for (var k in vars) { s = s.split('{' + k + '}').join(String(vars[k])); } }
     return s;
   }
+  window.__t = t;
   function applyLang() {
     document.documentElement.lang = (lang === 'zh') ? 'zh-CN' : 'en';
     document.title = t('title');
@@ -269,25 +294,46 @@ function safeName(n) {
   return String(n || 'received').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 200) || 'received';
 }
 
-/* ---------- CTXF 解析 ---------- */
+/* ---------- CTXF v2 解析（13B 头 + name + [meta 12B] + payload） ----------
+   v1：magic + ver=1 + type + flags + nameLen + payloadLen + name + payload
+   v2：同上，flags bit0=1 时 name 后有 meta：seq LE32 + total LE32 + origSize LE32 */
 function parseTransfer(u8) {
   if (u8.length < 13) return null;
   const magic = String.fromCharCode(u8[0], u8[1], u8[2], u8[3]);
-  if (magic !== 'CTXF' || u8[4] !== 1) return null;
+  if (magic !== 'CTXF') return null;
+  const ver = u8[4];
+  if (ver !== 1 && ver !== 2) return null;
   const type = u8[5];
+  const flags = u8[6];
   const nameLen = u8[7] | (u8[8] << 8);
   const plen = (u8[9] | (u8[10] << 8) | (u8[11] << 16) | (u8[12] << 24)) >>> 0;
-  if (13 + nameLen + plen !== u8.length) return null;
+  const hasMeta = (ver === 2 && (flags & 1) === 1) ? 12 : 0;
+  if (13 + nameLen + hasMeta + plen !== u8.length) return null;
   const name = new TextDecoder().decode(u8.subarray(13, 13 + nameLen));
-  const payload = u8.subarray(13 + nameLen);
-  return { type, name, payload };
+  const metaStart = 13 + nameLen;
+  let seq = 0, total = 1, origSize = plen;
+  if (hasMeta) {
+    seq = (u8[metaStart] | (u8[metaStart + 1] << 8) | (u8[metaStart + 2] << 16) | (u8[metaStart + 3] << 24)) >>> 0;
+    total = (u8[metaStart + 4] | (u8[metaStart + 5] << 8) | (u8[metaStart + 6] << 16) | (u8[metaStart + 7] << 24)) >>> 0;
+    origSize = (u8[metaStart + 8] | (u8[metaStart + 9] << 8) | (u8[metaStart + 10] << 16) | (u8[metaStart + 11] << 24)) >>> 0;
+  }
+  const payload = u8.subarray(metaStart + hasMeta);
+  return { ver, type, name, payload, seq, total, origSize };
 }
 
 /* ---------- 接收完成 ---------- */
 function handleSuccess(data) {
   const u8 = data instanceof Uint8Array ? data : new Uint8Array(data);
-  let rec;
   const parsed = parseTransfer(u8);
+  if (parsed && parsed.type === TYPE_FILE && parsed.total > 1) {
+    // 分段传输：存入 IndexedDB 续传，扫描保持继续等待下一段
+    handleSegment(parsed).catch((e) => {
+      console.warn('segment store failed:', e);
+      showErr(t('segStoreFail'));
+    });
+    return;
+  }
+  let rec;
   if (parsed) {
     rec = {
       name: safeName(parsed.name),
@@ -296,7 +342,7 @@ function handleSuccess(data) {
       blob: new Blob([parsed.payload], { type: TYPE_MIME[isValidType(parsed.type) ? parsed.type : 0] }),
     };
   } else {
-    // 兼容：旧版无 CTXF 头的原始数据流（如 sender-legacy.html / 官方 cimbar.org）
+    // 兼容：旧版无 CTXF 头的原始数据流（如官方 cimbar.org）
     rec = { name: 'received.bin', type: TYPE_FILE, size: u8.length, blob: new Blob([u8]) };
     showErr(t('noHeaderNote'));
   }
@@ -305,6 +351,39 @@ function handleSuccess(data) {
   saveToDB(rec);
   setScanState(false);
   setMeta('recvDone', { name: rec.name, size: fmtSize(rec.size) });
+}
+
+/* ---------- 分段续传 ---------- */
+async function handleSegment(parsed) {
+  const name = safeName(parsed.name);
+  let rec = await getTransfer(name);
+  if (!rec) {
+    rec = { name, origSize: parsed.origSize || 0, total: parsed.total, chunks: {}, time: Date.now() };
+  }
+  if (!rec.chunks[parsed.seq]) {
+    rec.chunks[parsed.seq] = new Blob([parsed.payload], { type: 'application/octet-stream' });
+    rec.total = parsed.total;
+    rec.origSize = parsed.origSize || rec.origSize;
+    await putTransfer(rec);
+  }
+  refreshActiveTransfers();
+  const got = Object.keys(rec.chunks).length;
+  if (got >= rec.total) {
+    const parts = [];
+    for (let i = 0; i < rec.total; i++) {
+      if (rec.chunks[i]) parts.push(rec.chunks[i]);
+    }
+    const blob = new Blob(parts, { type: TYPE_MIME[TYPE_FILE] });
+    await deleteTransfer(name);
+    const done = { name, type: TYPE_FILE, size: rec.origSize || blob.size, blob };
+    lastRec = done;
+    renderResult(done);
+    saveToDB(done);
+    refreshActiveTransfers();
+    setMeta('segDone', { name, size: fmtSize(done.size), total: rec.total });
+  } else {
+    setMeta('segProgress', { name, got, total: rec.total });
+  }
 }
 
 function renderResult(rec) {
@@ -375,20 +454,88 @@ function renderResult(rec) {
   resultEl.appendChild(card);
 }
 
-/* ---------- IndexedDB 历史记录 ---------- */
+/* ---------- IndexedDB v2：历史记录 + 分段续传 ---------- */
 let db = null;
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('ctxfer', 1);
+    const r = indexedDB.open('ctxfer', 2);
     r.onupgradeneeded = (e) => {
       const d = e.target.result;
       if (!d.objectStoreNames.contains('items')) {
         d.createObjectStore('items', { keyPath: 'id', autoIncrement: true });
       }
+      if (!d.objectStoreNames.contains('transfers')) {
+        d.createObjectStore('transfers', { keyPath: 'name' });
+      }
     };
     r.onsuccess = (e) => res(e.target.result);
     r.onerror = (e) => rej(e.target.error);
   });
+}
+async function getTransfer(name) {
+  if (!db) db = await openDB();
+  return new Promise((res, rej) => {
+    const r = db.transaction('transfers', 'readonly').objectStore('transfers').get(name);
+    r.onsuccess = () => res(r.result || null);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function putTransfer(rec) {
+  if (!db) db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('transfers', 'readwrite');
+    tx.objectStore('transfers').put(rec);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function deleteTransfer(name) {
+  if (!db) db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('transfers', 'readwrite');
+    tx.objectStore('transfers').delete(name);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function listTransfers() {
+  if (!db) db = await openDB();
+  return new Promise((res, rej) => {
+    const r = db.transaction('transfers', 'readonly').objectStore('transfers').getAll();
+    r.onsuccess = () => res(r.result || []);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function refreshActiveTransfers() {
+  try {
+    if (!db) db = await openDB();
+    const list = await listTransfers();
+    const wrap = document.getElementById('activeTransfers');
+    const ul = document.getElementById('activeList');
+    if (!list || !list.length) { if (wrap) wrap.hidden = true; return; }
+    if (wrap) wrap.hidden = false;
+    ul.innerHTML = '';
+    for (const tr of list) {
+      const got = Object.keys(tr.chunks || {}).length;
+      const li = document.createElement('li');
+      const n = document.createElement('span');
+      n.className = 'h-name';
+      n.textContent = tr.name;
+      const m = document.createElement('span');
+      m.className = 'h-meta';
+      m.textContent = t('segProgress', { got, total: tr.total });
+      li.appendChild(n);
+      li.appendChild(m);
+      const bar = document.createElement('div');
+      bar.className = 'minibar';
+      const fill = document.createElement('div');
+      fill.className = 'minibar-fill';
+      fill.style.width = Math.round(got / Math.max(1, tr.total) * 100) + '%';
+      bar.appendChild(fill);
+      li.appendChild(bar);
+      ul.appendChild(li);
+    }
+  } catch (e) { console.warn('active transfers list failed:', e); }
 }
 async function saveToDB(rec) {
   try {
@@ -524,6 +671,7 @@ window.__onLangChange = () => {
   btnScan.textContent = scanning ? t('btnScanning') : (resultEl.children.length ? t('btnScanAgain') : t('btnScan'));
   if (lastRec) renderResult(lastRec);
   refreshList();
+  refreshActiveTransfers();
 };
 
 /* ---------- 初始状态 ---------- */
@@ -536,6 +684,10 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 refreshList();
+refreshActiveTransfers();
+
+/* 调试/测试句柄（无副作用，便于控制台验证协议与续传） */
+window.__recv = { parseTransfer, handleSuccess, getTransfer, listTransfers, refreshActiveTransfers };
 </script>
 </body>
 </html>
