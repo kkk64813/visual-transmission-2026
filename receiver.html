@@ -293,24 +293,11 @@
 </script>
 
 <script>
-/* ---------- 官方 Cimbar 引擎初始化（cimbar_js.wasm：编解码 + fountain + zstd 一体） ----------
-   Module 必须定义在全局作用域，官方 loader 会复用并绑定 cimbard_* API。 */
+/* ---------- 官方 Cimbar 引擎（cimbar_js.wasm：编解码 + fountain + zstd 一体） ----------
+   Module 必须定义在全局作用域，官方 loader 会复用并绑定 cimbard_* API。
+   onRuntimeInitialized 的引擎就绪逻辑在下方主逻辑 IIFE 内定义（依赖其局部函数）。 */
 var Module = {};
 window.__CimbarModule = Module;
-Module.onRuntimeInitialized = function () {
-  try {
-    // 固定 4C 模式（发送端固定 4C）
-    Module._cimbard_configure_decode(4);
-    // 分配 fountain 缓冲
-    var size = Module._cimbard_get_bufsize();
-    window.__fountainBuf = new Uint8Array(Module.HEAPU8.buffer, Module._malloc(size), size);
-    window.__engineReady = true;
-    btnScan.disabled = false;
-    setMeta('readyMeta');
-  } catch (e) {
-    showErr(t('initFail') + ': ' + (e && e.message ? e.message : e));
-  }
-};
 </script>
 <script src="cimbar_js.2026-01-20T0312.js"></script>
 
@@ -337,6 +324,23 @@ Module.onRuntimeInitialized = function () {
   let metaKey = null, metaVars = null;
   let alignKey = null, alignOk = null;
   let lastDecodeAt = 0;
+
+  /* ---------- 引擎就绪（官方 loader 在 wasm 初始化后调用） ---------- */
+  Module.onRuntimeInitialized = function () {
+    try {
+      // 固定 4C 模式（发送端固定 4C）
+      Module._cimbard_configure_decode(4);
+      // 分配 fountain 缓冲
+      var size = Module._cimbard_get_bufsize();
+      window.__fountainBuf = new Uint8Array(Module.HEAPU8.buffer, Module._malloc(size), size);
+      window.__engineReady = true;
+      btnScan.disabled = false;
+      setMeta('readyMeta');
+      setAlign('alignIdle', null);
+    } catch (e) {
+      showErr(t('initFail') + ': ' + (e && e.message ? e.message : e));
+    }
+  };
 
   function showErr(msg) { errEl.style.display = 'block'; errEl.textContent = msg; }
   function hideErr() { errEl.style.display = 'none'; }

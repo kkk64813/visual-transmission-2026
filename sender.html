@@ -422,6 +422,18 @@
         return;
       }
       officialEncode(name, bytes);
+      closePanels();
+    }
+
+    /* 关闭所有浮层面板：面板是 fixed 浮层，打开时会遮挡底部 QR，发送后必须关闭 */
+    function closePanels() {
+      ['file', 'text', 'image'].forEach(function (which) {
+        var p = document.getElementById('panel-' + which);
+        var b = document.getElementById('btn-' + which);
+        if (p) p.classList.remove('show');
+        if (b) b.classList.remove('active');
+      });
+      Main.togglePause(true);
     }
 
     function readWhole(file, done) {
@@ -548,6 +560,7 @@
         if (file) {
           readWhole(file, function (bytes) { startFileSend(file.name, bytes); });
         }
+        closePanels();
         Main.togglePause(false);
       },
 
@@ -587,6 +600,7 @@
         if (files && files.length === 1) {
           readWhole(files[0], function (bytes) { startFileSend(files[0].name, bytes); });
         }
+        closePanels();
       },
 
       /* ---------- QR 大小/位置（防反光：把动画移出屏幕反光区） ---------- */
